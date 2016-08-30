@@ -15,7 +15,7 @@ class Inbel(LineReceiver):
         log.msg("New connection")
 
     def connectionLost(self, reason):
-        log.msg("Connectioon list: %s", reason)
+        log.msg("Connection lost: %s" % reason)
 
 
 class InbelFactory(Factory):

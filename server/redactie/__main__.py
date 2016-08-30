@@ -1,7 +1,7 @@
 import sys
 from twisted.internet.endpoints import TCP4ServerEndpoint
 
-from redactie import InbelFactory
+from inbel import InbelFactory
 
 def main():
     from twisted.python import log
