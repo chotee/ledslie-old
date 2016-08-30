@@ -1,36 +1,9 @@
-from twisted.protocols.basic import NetstringReceiver
-
-# class RedactieFactory()
-#
-# class Redactie(NetstringReceiver):
-#     pass
-
 from twisted.python import log
-from twisted.internet.protocol import Protocol
+from twisted.protocols.basic import LineReceiver
 from twisted.internet.protocol import Factory
 
-class InbelFactory(Factory):
-    def __init__(self):
-        self._msg_queue = []
 
-    def buildProtocol(self, addr):
-        return Inbel(self)
-
-    def new_message(self, msg):
-        self._msg_queue.append(msg)
-        log.msg("Queue now as %d messages!" % len(self._msg_queue))
-
-    def has_messages(self):
-        return bool(self._msg_queue)
-
-    def get_message(self):
-        return self._msg_queue.pop()
-
-
-class Inbel(Protocol):
-    def __init__(self, factory):
-        self.factory = factory
-
+class Inbel(LineReceiver):
     def dataReceived(self, data):
         if self.factory.has_messages():
             self.transport.write(self.factory.get_message())
@@ -43,3 +16,25 @@ class Inbel(Protocol):
 
     def connectionLost(self, reason):
         log.msg("Connectioon list: %s", reason)
+
+
+class InbelFactory(Factory):
+    protocol = Inbel
+    def __init__(self):
+        self._msg_queue = []
+
+    def new_message(self, msg):
+        self._msg_queue.append(msg)
+        log.msg("Queue now as %d messages!" % len(self._msg_queue))
+
+    def has_messages(self):
+        return bool(self._msg_queue)
+
+    def get_message(self):
+        return self._msg_queue.pop()
+
+    def startFactory(self):
+        log.msg("startFactory called")
+
+    def stopFactory(self):
+        log.msg("stopFactory called")
