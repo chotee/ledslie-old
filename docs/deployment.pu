@@ -1,0 +1,59 @@
+@startuml
+node Director[
+Director
+===
+Via webinterface
+]
+actor Admin
+node Switchboard
+storage Reporters {
+node IRCBot [
+IRC Bot
+===
+Network and channel
+]
+node Webscraper [
+Sites scraper
+===
+Sites and patterns
+]
+node APIAccessor [
+API Accessor
+===
+Sites and patterns
+]
+}
+cloud sites 
+cloud ircserver
+node Layout [
+Layout
+===
+Places contents
+Generates bitmap
+]
+storage Fontsets
+storage Data
+node Printer [
+Printer
+===
+Push Bitmap over WIFI
+]
+agent LedDisplay
+agent Esd8266
+agent Arduino
+Admin -- Director
+Layout -- Data
+Layout -- Fontsets
+Switchboard -0)- Director
+Switchboard -0)- Printer
+Switchboard -0)- IRCBot
+Switchboard -0)- Webscraper
+Switchboard -0)- APIAccessor
+Switchboard -0)-  Layout
+Webscraper --> sites
+APIAccessor --> sites
+IRCBot --> ircserver
+Printer == Esd8266
+Esd8266 == Arduino
+Arduino == LedDisplay
+@enduml
