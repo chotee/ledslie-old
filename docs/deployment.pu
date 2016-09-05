@@ -1,10 +1,19 @@
 @startuml
+actor Admin
+agent Esp8266 [
+ESP8266
+Buffer bitmaps in RAM
+]
+agent Arduino [
+Arduino
+2 bitmaps in RAM
+]
+agent LedDisplay
 node Director[
 Director
 ===
 Via webinterface
 ]
-actor Admin
 node Switchboard
 storage Reporters {
 node IRCBot [
@@ -12,6 +21,7 @@ IRC Bot
 ===
 Network and channel
 ]
+
 node Webscraper [
 Sites scraper
 ===
@@ -23,8 +33,6 @@ API Accessor
 Sites and patterns
 ]
 }
-cloud sites 
-cloud ircserver
 node Layout [
 Layout
 ===
@@ -38,10 +46,9 @@ Printer
 ===
 Push Bitmap over WIFI
 ]
-agent LedDisplay
-agent Esd8266
-agent Arduino
 Admin -- Director
+cloud sites
+cloud ircserver
 Layout -- Data
 Layout -- Fontsets
 Switchboard -0)- Director
@@ -50,10 +57,10 @@ Switchboard -0)- IRCBot
 Switchboard -0)- Webscraper
 Switchboard -0)- APIAccessor
 Switchboard -0)-  Layout
+Printer -0)- Esp8266
 Webscraper --> sites
 APIAccessor --> sites
 IRCBot --> ircserver
-Printer == Esd8266
-Esd8266 == Arduino
-Arduino == LedDisplay
+Esp8266 == Arduino: Serial
+Arduino == LedDisplay: Hardwired data referesh
 @enduml
