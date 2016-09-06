@@ -6,7 +6,6 @@ from inbel import InbelFactory
 def main():
     from twisted.python import log
     log.startLogging(sys.stdout)
-#    redactie = Redactie()
     from twisted.internet import reactor
     endpoint = TCP4ServerEndpoint(reactor, 8007)
     endpoint.listen(InbelFactory())

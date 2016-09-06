@@ -16,12 +16,7 @@ Via webinterface
 ]
 node Switchboard
 storage Reporters {
-node IRCBot [
-IRC Bot
-===
-Network and channel
-]
-
+node Clock
 node Webscraper [
 Sites scraper
 ===
@@ -31,6 +26,11 @@ node APIAccessor [
 API Accessor
 ===
 Sites and patterns
+]
+node IRCBot [
+IRC Bot
+===
+Network and channel
 ]
 }
 node Layout [
@@ -51,12 +51,13 @@ cloud sites
 cloud ircserver
 Layout -- Data
 Layout -- Fontsets
-Switchboard -0)- Director
-Switchboard -0)- Printer
-Switchboard -0)- IRCBot
-Switchboard -0)- Webscraper
-Switchboard -0)- APIAccessor
-Switchboard -0)-  Layout
+Switchboard -0)- Director : Configuration commands
+Switchboard -0)- Printer : Bitmaps
+Switchboard -0)- IRCBot : Events
+Switchboard -0)- Webscraper : Events
+Switchboard -0)- APIAccessor : Events
+Switchboard -0)- Clock : Events
+Switchboard -0)-  Layout : Bitmaps
 Printer -0)- Esp8266
 Webscraper --> sites
 APIAccessor --> sites
