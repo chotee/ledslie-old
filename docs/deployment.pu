@@ -1,11 +1,11 @@
 @startuml
 actor Admin
 agent Esp8266 [
-ESP8266
-Buffer bitmaps in RAM
+WifiSerial - ESP8266
+Buffers bitmaps in RAM
 ]
-agent Arduino [
-Arduino
+agent Refesher [
+Refesher - Arduino
 2 bitmaps in RAM
 ]
 agent LedDisplay
@@ -62,6 +62,6 @@ Printer -0)- Esp8266
 Webscraper --> sites
 APIAccessor --> sites
 IRCBot --> ircserver
-Esp8266 == Arduino: Serial
-Arduino == LedDisplay: Hardwired data referesh
+Esp8266 == Refesher: Serial
+Refesher == LedDisplay: Hardwired data referesh
 @enduml
