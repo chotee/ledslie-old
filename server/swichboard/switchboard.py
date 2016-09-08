@@ -3,7 +3,7 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet.protocol import Factory
 
 
-class Inbel(LineReceiver):
+class Switchboard(LineReceiver):
     def dataReceived(self, data):
         if self.factory.has_messages():
             self.transport.write(self.factory.get_message())
@@ -18,8 +18,8 @@ class Inbel(LineReceiver):
         log.msg("Connection lost: %s" % reason)
 
 
-class InbelFactory(Factory):
-    protocol = Inbel
+class SwitchboardFactory(Factory):
+    protocol = Switchboard
     def __init__(self):
         self._msg_queue = []
 

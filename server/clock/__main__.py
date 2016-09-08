@@ -34,7 +34,7 @@ class ClockFactory(ClientFactory):
 
 def main():
     from twisted.internet import reactor
-    reactor.connectTCP("127.0.0.1", 8007, ClockFactory())
+    log.msg("Starting up!")
     reactor.run()
 
 if __name__ == '__main__':
