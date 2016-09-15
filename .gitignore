@@ -5,3 +5,5 @@ secret.h
 __pycache__/
 *\.png
 \.idea/
+/docs/*\.html
+/docs/*\.png

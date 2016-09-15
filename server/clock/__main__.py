@@ -1,22 +1,22 @@
 import sys
-from sys import stdout
 from datetime import datetime
 
+from twisted.internet import reactor
 from twisted.python import log
 from twisted.internet.protocol import Protocol, ClientFactory
+from twisted.internet.endpoints import TCP4ClientEndpoint
 
 class Clock(Protocol):
     def dataReceived(self, data):
-        stdout.write(data)
-        from twisted.internet import reactor
         reactor.callLater(1, self._send_time)
 
     def connectionMade(self):
-        self.transport.write("Hello!")
-#        reactor.callLater(1000, self._send_time)
+        self.transport.write(b"Clock Hello!")
+        reactor.callLater(1000, self._send_time)
 
     def _send_time(self):
-        self.transport.write(datetime.now().isoformat("T") + "\n")
+        msg = datetime.now().isoformat("T") + "\n"
+        self.transport.write(msg.encode("utf-8"))
 
 class ClockFactory(ClientFactory):
     def startedConnecting(self, connector):
@@ -33,8 +33,9 @@ class ClockFactory(ClientFactory):
         log.msg('Connection failed. Reason:', reason)
 
 def main():
-    from twisted.internet import reactor
     log.msg("Starting up!")
+    endpoint = TCP4ClientEndpoint(reactor, "127.0.0.1", 8007)
+    endpoint.connect(ClockFactory())
     reactor.run()
 
 if __name__ == '__main__':

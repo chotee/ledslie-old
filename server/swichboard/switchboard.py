@@ -5,9 +5,10 @@ from twisted.internet.protocol import Factory
 
 class Switchboard(LineReceiver):
     def dataReceived(self, data):
-        role, msg = data.split()
+#        role, msg = data.split()
+        msg = data
         self.factory.new_message(msg)
-        self.transport.write(msg[::-1].encode("utf-8"))
+        self.transport.write(msg[::-1])
 
     def connectionMade(self):
         log.msg("New connection")
@@ -23,6 +24,7 @@ class SwitchboardFactory(Factory):
 
     def new_message(self, msg):
         self._msg_queue.append(msg)
+        log.msg(msg)
         log.msg("Queue now as %d messages!" % len(self._msg_queue))
 
     def has_messages(self):
