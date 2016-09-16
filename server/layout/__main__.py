@@ -1,5 +1,4 @@
 import sys
-from datetime import datetime
 
 from twisted.internet import reactor
 from twisted.python import log
@@ -7,24 +6,18 @@ from twisted.internet.protocol import Protocol, ClientFactory
 from twisted.internet.endpoints import TCP4ClientEndpoint
 
 
-class Clock(Protocol):
+class Layout(Protocol):
+    def dataReceived(self, data):
+        log.msg("Got data: %s" % data)
+
     def connectionMade(self):
-        self.transport.write(b"role reporter")
-        reactor.callLater(1, self._send_time)
+        self.transport.write(b"role layout")
 
-    def _send_time(self):
-        msg = "time %s\n" % datetime.now().isoformat("T")
-        self.transport.write(msg.encode("utf-8"))
-        reactor.callLater(1, self._send_time)
+class LayoutFactory(ClientFactory):
+    protocol = Layout
 
-
-class ClockFactory(ClientFactory):
     def startedConnecting(self, connector):
         log.msg("Started to connect")
-
-    def buildProtocol(self, addr):
-        log.msg("Connected to %s" % addr)
-        return Clock()
 
     def clientConnectionLost(self, connector, reason):
         log.msg('Lost connection. Reason:', reason)
@@ -36,7 +29,7 @@ class ClockFactory(ClientFactory):
 def main():
     log.msg("Starting up!")
     endpoint = TCP4ClientEndpoint(reactor, "127.0.0.1", 8007)
-    endpoint.connect(ClockFactory())
+    endpoint.connect(LayoutFactory())
     reactor.run()
 
 if __name__ == '__main__':
