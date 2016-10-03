@@ -1,21 +1,23 @@
 from twisted.trial import unittest
 from twisted.test import proto_helpers
 
-from swichboard.switchboard import SwitchboardFactory
+from swichboard.switchboard import SwitchboardService
 
-
-class CalculationTestCase(unittest.TestCase):
+class TestSwitchboardService(unittest.TestCase):
 
     def setUp(self):
-        factory = SwitchboardFactory()
-        self.proto = factory.buildProtocol(('127.0.0.1', 0))
-        self.tr = proto_helpers.StringTransport()
-        self.proto.makeConnection(self.tr)
+        self.service = SwitchboardService()
 
-    def _test(self, role, data, expected):
-        self.proto.dataReceived('%s %s\r\n' % (role, data))
-        self.assertEqual(self.tr.value().decode("utf-8"), expected)
+    def test_forward_message(self):
+        receiver = FakeRemoteClient()
+        self.service.register_client("receiver", receiver)
+        self.service.forward_message("receiver", "the message")
+        self.assertEqual("the message", receiver.received_message)
+
+    def test_forward_not_existing(self):
+        self.service.forward_message("unknown", "the message")
 
 
-    def test_sendmsg(self):
-        return self._test('lala', 'foo', 'oof')
+class FakeRemoteClient(object):
+    def send_message(self, message):
+        self.received_message = message

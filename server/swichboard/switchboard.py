@@ -5,6 +5,18 @@ from twisted.protocols.basic import LineReceiver
 from twisted.internet.protocol import Factory
 
 
+class SwitchboardService(object):
+    def __init__(self):
+        self._roles = {}
+
+    def register_client(self, role, client):
+        self._roles.setdefault(role, []).append(client)
+
+    def forward_message(self, for_role, message):
+        for client in self._roles.get(for_role, []):
+            client.send_message(message)
+
+
 class Switchboard(LineReceiver):
     def dataReceived(self, data):
         op, msg = data.split()
@@ -24,6 +36,7 @@ class Switchboard(LineReceiver):
 
     def send_msg(self, msg):
         self.transport.write(msg)
+
 
 class SwitchboardFactory(Factory):
     protocol = Switchboard
