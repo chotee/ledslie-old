@@ -10,12 +10,12 @@ class TestSwitchboardService(unittest.TestCase):
 
     def test_forward_message(self):
         receiver = FakeRemoteClient()
-        self.service.register_client("receiver", receiver)
-        self.service.forward_message("receiver", "the message")
+        self.service.got_register("receiver", receiver)
+        self.service.got_forward("receiver", "the message")
         self.assertEqual("the message", receiver.received_message)
 
     def test_forward_not_existing(self):
-        self.service.forward_message("unknown", "the message")
+        self.service.got_forward("unknown", "the message")
 
 
 class FakeRemoteClient(object):
