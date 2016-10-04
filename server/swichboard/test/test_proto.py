@@ -12,15 +12,21 @@ class TestProtocol(unittest.TestCase):
         self.proto.makeConnection(self.tr)
 
     def _test(self, message, expected):
-        self.proto.dataReceived(message+b"\r\n")
-        self.assertEqual(self.tr.value(), expected+b"\r\n")
+        self.proto.dataReceived(message)
+        self.assertEqual(self.tr.value(), expected)
 
     def test_send_test_message(self):
-        return self._test(b"test foo", b"reply oof")
+        return self._test(b"test foo\n", b"reply oof\n")
+
+    def test_register_message(self):
+        return self._test(b"register foo\n", b"reply "+str(self.proto).encode()+b"\n")
 
     def test_send_unknown_message(self):
-        self.assertRaises(AttributeError, self.proto.dataReceived, b"unknown foo"+b"\r\n")
+        self.assertRaises(AttributeError, self.proto.dataReceived, b"unknown foo\n")
 
 class FakeService(object):
+    def got_register(self, roles, client):
+        return client
+
     def got_test(self, message):
         return message[::-1]

@@ -1,14 +1,15 @@
 import sys
 from twisted.internet.endpoints import TCP4ServerEndpoint
 
-from swichboard.switchboard import SwitchboardFactory, SwitchboardService
+from swichboard.proto import ProtocolFactory
+from swichboard.switchboard import SwitchboardService
 
 
 def main():
     from twisted.python import log
     log.startLogging(sys.stdout)
     switchboard = SwitchboardService()
-    factory = SwitchboardFactory()
+    factory = ProtocolFactory(switchboard)
     from twisted.internet import reactor
     endpoint = TCP4ServerEndpoint(reactor, 8007)
     endpoint.listen(factory)
