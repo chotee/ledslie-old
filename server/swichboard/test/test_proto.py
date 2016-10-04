@@ -15,8 +15,11 @@ class TestProtocol(unittest.TestCase):
         self.proto.dataReceived(message+b"\r\n")
         self.assertEqual(self.tr.value(), expected+b"\r\n")
 
-    def test_test(self):
+    def test_send_test_message(self):
         return self._test(b"test foo", b"reply oof")
+
+    def test_send_unknown_message(self):
+        self.assertRaises(AttributeError, self.proto.dataReceived, b"unknown foo"+b"\r\n")
 
 class FakeService(object):
     def got_test(self, message):
