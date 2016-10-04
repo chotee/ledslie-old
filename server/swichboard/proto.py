@@ -1,6 +1,3 @@
-from collections import deque
-from enum import Enum, unique
-
 from twisted.python import log
 from twisted.protocols.basic import LineReceiver
 from twisted.internet.protocol import ServerFactory
@@ -11,7 +8,11 @@ class Protocol(LineReceiver):
 
     def lineReceived(self, data):
         data = data.decode("utf-8")
-        op, data = data.split(None, 1)
+        try:
+            op, data = data.split(None, 1)
+        except ValueError:
+            op = data
+            data = None
         reply = self.factory.send_in(op, data, self)
         if reply:
             return self.send_message(reply)
@@ -34,11 +35,14 @@ class ProtocolFactory(ServerFactory):
 
     def send_in(self, op, contents, client):
         if op.lower() == 'register':
-            return self.service.got_register(contents, client)
+            return self.service.got_register(client, contents)
+        elif op.lower() == 'stats':
+            return self.service.got_stats(client)
         else:
             method_name = "got_%s" % op.lower()
             method = getattr(self.service, method_name)
-            return method(*contents.split(None, 1))
+            args = contents.split(None, 1)
+            return method(client, *args)
 
     def startFactory(self):
         log.msg("startFactory called")
