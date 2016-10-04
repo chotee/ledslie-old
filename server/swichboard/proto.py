@@ -14,8 +14,11 @@ class Protocol(LineReceiver):
         op, data = data.split(None, 1)
         reply = self.factory.send_in(op, data, self)
         if reply:
-            response = "%s %s" % ("reply", reply)
-            return self.sendLine(response.encode('utf-8'))
+            return self.send_message(reply)
+
+    def send_message(self, message):
+        response = "%s %s" % ("reply", message)
+        return self.sendLine(response.encode('utf-8'))
 
     def connectionMade(self):
         log.msg("New connection")
@@ -35,7 +38,7 @@ class ProtocolFactory(ServerFactory):
         else:
             method_name = "got_%s" % op.lower()
             method = getattr(self.service, method_name)
-            return method(contents)
+            return method(*contents.split(None, 1))
 
     def startFactory(self):
         log.msg("startFactory called")
