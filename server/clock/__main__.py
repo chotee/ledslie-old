@@ -40,18 +40,13 @@ class ClockService(object):
     pass
 
 def main():
-    from twisted.python import log
-    log.msg(sys.path)
     log.startLogging(sys.stdout)
     clock_service = ClockService()
     factory = ProtocolFactory(clock_service)
     from twisted.internet import reactor
-    connector = ConnectionFactory(reactor)
-    connector.connect("tcp://127.0.0.1:8007")
-    # endpoint = TCP4ServerEndpoint(reactor, 8007)
-    #    endpoint.listen(factory)
+    connector = ConnectionFactory(reactor, factory)
+    reactor.callWhenRunning(connector.connect, "tcp://127.0.0.1:8007", remote_identity="switch")
     reactor.run()
-
 
 if __name__ == '__main__':
     log.startLogging(sys.stdout)
