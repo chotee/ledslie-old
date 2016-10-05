@@ -1,6 +1,6 @@
 from twisted.python import log
 from twisted.protocols.basic import LineReceiver
-from twisted.internet.protocol import ServerFactory
+from twisted.internet.protocol import Factory
 
 
 class Protocol(LineReceiver):
@@ -28,7 +28,7 @@ class Protocol(LineReceiver):
         log.msg("Connection lost: %s" % reason)
 
 
-class ProtocolFactory(ServerFactory):
+class ProtocolFactory(Factory):
     protocol = Protocol
     def __init__(self, service):
         self.service = service

@@ -10,8 +10,8 @@ class SwitchboardService(object):
 
     def start(self):
         log.msg("Start called on %s" % self.__class__.__name__)
-        loop = task.LoopingCall(self.time_passes)
-        loop.start(10.0)
+        # loop = task.LoopingCall(self.time_passes)
+        # loop.start(10.0)
 
     def got_register(self, client, role):
         client.role = role
