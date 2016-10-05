@@ -1,5 +1,6 @@
 from enum import Enum
 
+from twisted.internet import reactor
 from twisted.internet.defer import Deferred
 from twisted.internet.protocol import Factory
 from twisted.internet.task import LoopingCall
@@ -40,15 +41,22 @@ class ConnectionStateEnum(Enum):
 class ConnectionWatchdog(object):
     def __init__(self, connection):
         self.connection = connection
-        self.beat_frequency = 1.0  # every secon
+        self.beat_frequency = 1.0  # every second
+        self.setup_wait = 0.1 # seconds to wait before sending first heartbeat.
+        self.allowed_beat_misses = 3  # How many beats to miss before flagging disconnect.
+        self.count = 0
 
     def start_heartbeat(self, remote_identity):
-        beat = LoopingCall(self.send_beat, remote_identity)
-        beat.start(self.beat_frequency)
+        def _start(remote_identity):
+            beat = LoopingCall(self.send_beat, remote_identity)
+            beat.start(self.beat_frequency)
+        reactor.callLater(self.setup_wait, _start, remote_identity)
 
     def send_beat(self, remote_identity):
-        log.msg("Sending a beat to remote identity %s" % remote_identity)
-        self.connection.sendMsg(remote_identity, b"ping")
+        log.msg("Sending beat %d to remote identity %s" % (self.count, remote_identity))
+        self.connection.sendMultipart(remote_identity, [b"ping", str(self.count).encode()])
+        self.count += 1
+
 
 class Connection(ZmqRouterConnection):
     def __init__(self, factory, endpoint=None, my_identity=None, remote_identity=None):
