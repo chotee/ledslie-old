@@ -1,5 +1,4 @@
 import time
-from enum import Enum
 
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
@@ -27,6 +26,18 @@ class ProtocolFactory(Factory):
     def __init__(self, service):
         super().__init__()
         self.service = service
+        self.peers = {}
+
+    def buildProtocol(self, addr):
+        if addr not in self.peers:
+            proto = super(ProtocolFactory, self).buildProtocol(addr)
+            self.peers[addr] = proto
+        else:
+            proto = self.peers[addr]
+        proto.connectionMade()
+
+    def connection_lost(self, addr):
+        self.peers[addr].connectionLost("disconnected")
 
     def startFactory(self):
         log.msg("startFactory called")
@@ -140,6 +151,7 @@ class Connection(ZmqRouterConnection):
         :type sender_id: str
         """
         log.msg("established connection to %s." % sender_id)
+        self.factory.connection_established(sender_id)
 
     def sender_disconnected(self, sender_id):
         """
@@ -148,6 +160,7 @@ class Connection(ZmqRouterConnection):
         :type sender_id: str
         """
         log.msg("lost connection to %s" % sender_id)
+        self.factory.connection_lost(sender_id)
 
     def gotMessage(self, sender_id, *frames):
         log.msg("gotMessage %s -> %s" % (sender_id, frames))
@@ -161,9 +174,10 @@ class ConnectionFactory(ZmqFactory):
     def __init__(self, reactor, protocol_factory):
         log.msg("Create %s" % self.__class__.__name__)
         self.reactor = reactor
-        self.factory = protocol_factory
+        self.protocol_factory = protocol_factory
         self.registerForShutdown()
         super().__init__()
+        self.protocol_factory.startFactory()
 
     def listen(self, uri, my_identity):
         """
@@ -195,3 +209,9 @@ class ConnectionFactory(ZmqFactory):
         conn = Connection(self, endpoint, my_identity, remote_identity)
         log.msg("connect: %s(%s) to %s(%s)" % (endpoint.type, my_identity,
                                                endpoint.address, remote_identity))
+
+    def connection_established(self, remote_identity):
+        p = self.protocol_factory.buildProtocol(remote_identity)
+
+    def connection_lost(self, remote_identity):
+        self.protocol_factory.connection_lost(remote_identity)

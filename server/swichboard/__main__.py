@@ -1,8 +1,6 @@
 import sys
 sys.path.insert(0, '.')
 
-from twisted.internet.endpoints import TCP4ServerEndpoint
-
 from common.zmq_proto import ProtocolFactory, ConnectionFactory
 from swichboard.switchboard import SwitchboardService
 
@@ -19,8 +17,6 @@ def main():
     factory = ProtocolFactory(switchboard)
     from twisted.internet import reactor
     connector = ConnectionFactory(reactor, factory)
-    #endpoint = TCP4ServerEndpoint(reactor, 8007)
-#    endpoint.listen(factory)
     reactor.callWhenRunning(startServices([switchboard]))
     reactor.callWhenRunning(connector.listen, "tcp://*:8007", "switch")
     reactor.run()

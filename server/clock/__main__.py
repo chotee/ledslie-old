@@ -3,11 +3,8 @@ from datetime import datetime
 
 sys.path.insert(0, '.')
 
-#from twisted.internet import reactor
 from twisted.python import log
-#from twisted.internet.protocol import Protocol, ClientFactory
 from common.zmq_proto import ProtocolFactory, ConnectionFactory
-from twisted.internet.endpoints import TCP4ClientEndpoint
 
 
 # class ClockProtocol(Protocol):
