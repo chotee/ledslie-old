@@ -1,7 +1,8 @@
 import sys
 sys.path.insert(0, '.')
 
-from common.zmq_proto import ProtocolFactory, ConnectionFactory
+from common.zmq_proto import ProtocolFactory
+from common.connections import ConnectionFactory
 from swichboard.switchboard import SwitchboardService
 
 def startServices(objects_to_start):

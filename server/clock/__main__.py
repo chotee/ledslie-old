@@ -4,7 +4,8 @@ from datetime import datetime
 sys.path.insert(0, '.')
 
 from twisted.python import log
-from common.zmq_proto import ProtocolFactory, ConnectionFactory
+from common.zmq_proto import ProtocolFactory
+from common.connections import ConnectionFactory
 
 
 # class ClockProtocol(Protocol):
