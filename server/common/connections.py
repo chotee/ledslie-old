@@ -1,8 +1,11 @@
 import time
 
+import zmq
 from twisted.internet import reactor
+from twisted.internet.defer import Deferred
 from twisted.internet.task import LoopingCall
 from twisted.python import log
+from twisted.python.failure import Failure
 from zmq import constants as zmq_constants
 from txzmq import ZmqRouterConnection, ZmqFactory, ZmqEndpoint
 
@@ -105,6 +108,7 @@ class Connection(ZmqRouterConnection):
         """
         my_identity = my_identity.encode() if my_identity else None
         remote_identity = remote_identity.encode() if remote_identity else None
+        log.msg("Building connection for %s [%s]" % (remote_identity, endpoint))
         super().__init__(factory, endpoint, my_identity)
         self.socket.set(zmq_constants.PROBE_ROUTER, 1)
         self.connecting = (endpoint.type == 'connect')
@@ -168,7 +172,7 @@ class ConnectionFactory(ZmqFactory):
         :return: None
         :rtype: None
         """
-        self.connect(uri, method='bind', my_identity=my_identity)
+        return self.connect(uri, method='bind', my_identity=my_identity)
 
     def connect(self, uri, method='connect', my_identity=None, remote_identity=None):
         """
@@ -185,9 +189,22 @@ class ConnectionFactory(ZmqFactory):
         :rtype: Deferred
         """
         endpoint = ZmqEndpoint(method, uri)
-        conn = Connection(self, endpoint, my_identity, remote_identity)
-        log.msg("connect: %s(%s) to %s(%s)" % (endpoint.type, my_identity,
+        log.msg("Doing %s to %s" % endpoint)
+        d = Deferred()
+        reactor.callLater(0, self._create_connection, d, self, endpoint, my_identity, remote_identity)
+        d.addCallback(log.msg, "connect: %s(%s) to %s(%s)" % (endpoint.type, my_identity,
                                                endpoint.address, remote_identity))
+        def _report_problem(msg):
+            log.msg("There's a problem %s" % msg)
+            return Failure(msg)
+        d.addErrback(_report_problem)
+        return d
+
+    def _create_connection(self, deferred, *args, **kwargs):
+        try:
+            deferred.callback(Connection(*args, **kwargs))
+        except zmq.error.ZMQError as exc:
+            deferred.errback(exc)
 
     def connection_established(self, remote_identity):
         p = self.protocol_factory.buildProtocol(remote_identity)
