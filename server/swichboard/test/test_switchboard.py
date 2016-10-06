@@ -2,21 +2,24 @@ from twisted.trial import unittest
 from twisted.test import proto_helpers
 
 from swichboard.switchboard import SwitchboardService
+from common.zmq_proto import Protocol, LichtkrantProtocol
+
 
 class TestSwitchboardService(unittest.TestCase):
 
     def setUp(self):
         self.service = SwitchboardService()
+        self.client = LichtkrantProtocol()
 
     def test_forward_message(self):
-        receiver = FakeRemoteClient()
-        res = self.service.got_register("receiver", receiver)
+        client = FakeRemoteClient()
+        res = self.service.got_register(client, "role")
         self.assertEqual(res, "Okay")
-        self.service.got_forward("receiver", "the message")
-        self.assertEqual("the message", receiver.received_message)
+        self.service.got_forward(client, "role", "the message")
+        self.assertEqual("the message", client.received_message)
 
     def test_forward_not_existing(self):
-        self.service.got_forward("unknown", "the message")
+        self.service.got_forward(self.client, "send_to_role", "the message")
 
 
 class FakeRemoteClient(object):

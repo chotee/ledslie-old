@@ -114,6 +114,7 @@ class Connection(ZmqRouterConnection):
         self.connecting = (endpoint.type == 'connect')
         self.watchdog = ConnectionWatchdog(self)
         self.senders = set()
+        self.protocols = {}
         if self.connecting:
             assert remote_identity, "For connecting, a remote identity is required."
             self.register_sender(remote_identity)
@@ -134,7 +135,8 @@ class Connection(ZmqRouterConnection):
         :type sender_id: str
         """
         log.msg("established connection to %s." % sender_id)
-        self.factory.connection_established(sender_id)
+        protocol = self.factory.connection_established(self, sender_id)
+        self.protocols[sender_id] = protocol
 
     def sender_disconnected(self, sender_id):
         """
@@ -146,11 +148,25 @@ class Connection(ZmqRouterConnection):
         self.factory.connection_lost(sender_id)
 
     def gotMessage(self, sender_id, *frames):
+        """
+        I get called when a message is received on the socket. If the message is a ping, I inform the watchdog.
+        If it's any other, I pass it on to the object maintaining state with the recipient.
+        :param sender_id: The Id of the sender having send the connection
+        :type sender_id: str
+        :param frames: All the frames of the message.
+        :type frames: tuple
+        """
         #log.msg("gotMessage %s -> %s" % (sender_id, frames))
         if sender_id not in self.senders:
             #log.msg("New sender %s" % sender_id)
             self.register_sender(sender_id)
         self.watchdog.report_activity(sender_id)
+        if (not frames[0]   # Connection activate message from PROBE_ROUTER.
+            or frames[0] == b'ping'):  # A ping message
+            return  # Do not concern the clients.
+        # look up what protocol is there for this sender, and pass the message on to them.
+        proto = self.protocols[sender_id]
+        proto.messageReceived(*frames)
 
 
 class ConnectionFactory(ZmqFactory):
@@ -206,8 +222,9 @@ class ConnectionFactory(ZmqFactory):
         except zmq.error.ZMQError as exc:
             deferred.errback(exc)
 
-    def connection_established(self, remote_identity):
-        p = self.protocol_factory.buildProtocol(remote_identity)
+    def connection_established(self, connection, remote_identity):
+        p = self.protocol_factory.buildProtocol(connection, remote_identity)
+        return p
 
     def connection_lost(self, remote_identity):
         self.protocol_factory.connection_lost(remote_identity)

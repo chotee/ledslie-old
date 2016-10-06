@@ -10,8 +10,6 @@ class SwitchboardService(object):
 
     def start(self):
         log.msg("Start called on %s" % self.__class__.__name__)
-        # loop = task.LoopingCall(self.time_passes)
-        # loop.start(10.0)
 
     def got_register(self, client, role):
         client.role = role
@@ -24,11 +22,12 @@ class SwitchboardService(object):
         for client in self._roles.get(for_role, []):
             client.send_message(message)
 
-    def got_stats(self, client):
-        summary = ["Source, Dest, Count"]
-        for src, dst in self._stats:
-            summary.append(", ".join([src, dst, str(self._stats[src, dst])]))
-        return "\n".join(summary)
+
+    # def got_stats(self, client):
+    #     summary = ["Source, Dest, Count"]
+    #     for src, dst in self._stats:
+    #         summary.append(", ".join([src, dst, str(self._stats[src, dst])]))
+    #     return "\n".join(summary)
 
     def time_passes(self):
         clients_list = set()
