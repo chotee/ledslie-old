@@ -117,26 +117,26 @@ class Connection(ZmqRouterConnection):
         self.protocols = {}
         if self.connecting:
             assert remote_identity, "For connecting, a remote identity is required."
-            self.register_sender(remote_identity)
+            self.register_remote(remote_identity)
 
-    def register_sender(self, sender_id):
+    def register_remote(self, remote_id):
         """
         I register a sender with the system so that the connection will be monitored.
-        :param sender_id: Identity of the sender to monitor
-        :type sender_id: str
+        :param remote_id: Identity of the sender to monitor
+        :type remote_id: str
         """
-        self.senders.add(sender_id)
-        self.watchdog.start_monitor(sender_id)
+        self.senders.add(remote_id)
+        self.watchdog.start_monitor(remote_id)
 
-    def sender_established(self, sender_id):
+    def sender_established(self, remote_id):
         """
         I get called when we can confirm a connection with a sender has been established.
-        :param sender_id: The ID of the sender that we have established
-        :type sender_id: str
+        :param remote_id: The ID of the sender that we have established
+        :type remote_id: str
         """
-        log.msg("established connection to %s." % sender_id)
-        protocol = self.factory.connection_established(self, sender_id)
-        self.protocols[sender_id] = protocol
+        log.msg("established connection to %s." % remote_id)
+        protocol = self.factory.connection_established(self, remote_id)
+        self.protocols[remote_id] = protocol
 
     def sender_disconnected(self, sender_id):
         """
@@ -147,25 +147,25 @@ class Connection(ZmqRouterConnection):
         log.msg("lost connection to %s" % sender_id)
         self.factory.connection_lost(sender_id)
 
-    def gotMessage(self, sender_id, *frames):
+    def gotMessage(self, remote_id, *frames):
         """
         I get called when a message is received on the socket. If the message is a ping, I inform the watchdog.
         If it's any other, I pass it on to the object maintaining state with the recipient.
-        :param sender_id: The Id of the sender having send the connection
-        :type sender_id: str
+        :param remote_id: The Id of the sender having send the connection
+        :type remote_id: str
         :param frames: All the frames of the message.
         :type frames: tuple
         """
         #log.msg("gotMessage %s -> %s" % (sender_id, frames))
-        if sender_id not in self.senders:
+        if remote_id not in self.senders:
             #log.msg("New sender %s" % sender_id)
-            self.register_sender(sender_id)
-        self.watchdog.report_activity(sender_id)
+            self.register_remote(remote_id)
+        self.watchdog.report_activity(remote_id)
         if (not frames[0]   # Connection activate message from PROBE_ROUTER.
             or frames[0] == b'ping'):  # A ping message
             return  # Do not concern the clients.
         # look up what protocol is there for this sender, and pass the message on to them.
-        proto = self.protocols[sender_id]
+        proto = self.protocols[remote_id]
         proto.messageReceived(*frames)
 
 
