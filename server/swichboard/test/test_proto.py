@@ -1,7 +1,7 @@
 from twisted.trial import unittest
 from twisted.test import proto_helpers
 
-from common.zmq_proto import LichtkrantProtocol, ZmqTransport, ProtocolFactory
+from common.zmq_proto import LedslieProtocol, ZmqTransport, ProtocolFactory
 
 
 class TestProtocol(unittest.TestCase):
@@ -33,8 +33,8 @@ class FakeZmqTransport(ZmqTransport):
         super().__init__(connection, remote_id)
         self._value = None
 
-    def send(self, request_id, *dataframes):
-        self._value = [request_id] + list(dataframes)
+    def send(self, request_id, *message_parts):
+        self._value = [request_id] + list(message_parts)
 
     def value(self):
         return self._value

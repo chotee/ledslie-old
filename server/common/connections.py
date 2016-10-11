@@ -1,98 +1,19 @@
-import time
+import os
+from base64 import b64encode
 
 import zmq
+from twisted.internet import defer
 from twisted.internet import reactor
 from twisted.internet.defer import Deferred
-from twisted.internet.task import LoopingCall
 from twisted.python import log
 from twisted.python.failure import Failure
-from zmq import constants as zmq_constants
 from txzmq import ZmqRouterConnection, ZmqFactory, ZmqEndpoint
+from zmq import constants as zmq_constants
 
+from common.watchdog import ConnectionWatchdog
 
-class ConnectionWatchdog(object):
-    """
-    I help keeping watch over the senders connected to a zmq socket. I send them packets at regular intervals.
-    """
-    def __init__(self, connection, ):
-        """
-        Constructor
-        :param connection: The connection of which senders need to be monitored.
-        :type connection: Connection
-        """
-        self.connection = connection
-        self.beat_frequency = 1.0  # every second
-        self.setup_wait = 0.1 # seconds to wait before sending first heartbeat.
-        self.allowed_beat_misses = 2  # How many beats to miss before flagging disconnect.
-        self.grace_time = self.beat_frequency * self.allowed_beat_misses
-        self.monitors = {}
-        self.last_seen = {}
-        self.actives = set()
-
-    def start_monitor(self, remote_identity):
-        """
-        I start the monitoring of a sender with remote_identity.
-        :param remote_identity: The Identity of the sender.
-        :type remote_identity: str
-        """
-        self.last_seen[remote_identity] = time.time()
-        if remote_identity not in self.monitors:
-            self.monitors[remote_identity] = {
-                'review': LoopingCall(self._review, remote_identity),
-                'beat': LoopingCall(self._send_beat, remote_identity),
-                'count': 0
-            }
-            self._start_checkloops(remote_identity)
-
-    def _start_checkloops(self, remote_identity):
-        beat = self.monitors[remote_identity]['beat']
-        review = self.monitors[remote_identity]['review']
-        def _start_beats(beat):
-            if not beat.running:
-                beat.start(self.beat_frequency)
-        reactor.callLater(self.setup_wait, _start_beats,  beat)
-        if not review.running:
-            review.start(self.grace_time)
-
-    def _send_beat(self, remote_identity):
-        """
-        I send a single beat message to the sender with remote_identity via the self.connection object.
-        :param remote_identity: The remote identity to send a beat to.
-        :type remote_identity: str
-        """
-        count = self.monitors[remote_identity]['count']
-        #log.msg("Sending beat %d to remote identity %s" % (count, remote_identity))
-        self.connection.sendMultipart(remote_identity, [b"ping", str(count).encode()])
-        self.monitors[remote_identity]['count'] += 1
-
-    def _review(self, remote_identity):
-        """
-        I periodically review the state of a sender via a connection. If the connection is stale I will call
-        sender_disconnected on self.connection.
-        :param remote_identity: The identity to review.
-        :type remote_identity: str
-        """
-        last_seen = self.last_seen[remote_identity]
-        if last_seen + self.grace_time > time.time():
-            return  # Still active.
-        if remote_identity in self.actives:
-            self.actives.remove(remote_identity)
-            self.monitors[remote_identity]['beat'].stop()
-            self.monitors[remote_identity]['review'].stop()
-            self.connection.sender_disconnected(remote_identity)
-
-    def report_activity(self, remote_identity):
-        """
-        I get called whenever there's activity of a sender.
-        :param remote_identity: ID of the sender that had activity
-        :type remote_identity: str
-        """
-        #log.msg("%s is alive" % remote_identity)
-        self.last_seen[remote_identity] = time.time()
-        if remote_identity not in self.actives:
-            self.actives.add(remote_identity)
-            self._start_checkloops(remote_identity)
-            self.connection.sender_established(remote_identity)
+def MessageID():
+    return b64encode(os.urandom(4))[:6]
 
 
 class Connection(ZmqRouterConnection):
@@ -115,6 +36,8 @@ class Connection(ZmqRouterConnection):
         self.watchdog = ConnectionWatchdog(self)
         self.senders = set()
         self.protocols = {}
+        self._requests = {}
+        self._routingInfo = {}
         if self.connecting:
             assert remote_identity, "For connecting, a remote identity is required."
             self.register_remote(remote_identity)
@@ -156,17 +79,88 @@ class Connection(ZmqRouterConnection):
         :param frames: All the frames of the message.
         :type frames: tuple
         """
-        #log.msg("gotMessage %s -> %s" % (sender_id, frames))
+        log.msg("gotMessage remote_id:%s frames:%s" % (remote_id, repr(frames)))
         if remote_id not in self.senders:
             #log.msg("New sender %s" % sender_id)
             self.register_remote(remote_id)
         self.watchdog.report_activity(remote_id)
         if (not frames[0]   # Connection activate message from PROBE_ROUTER.
             or frames[0] == b'ping'):  # A ping message
-            return  # Do not concern the clients.
-        # look up what protocol is there for this sender, and pass the message on to them.
+            return  # Done handling the ping.
+
         proto = self.protocols[remote_id]
+        if len(frames) > 2 and frames[1] == b'':  # This looks like a request message
+            msgId, msg = frames[0], frames[2:]
+            if msgId in self._requests:
+                self.requestReplyReceived(msgId, msg)
+            else:
+                proto.requestReceived(*self.requestReceived(remote_id, msgId, msg))
+                return
+        # look up what protocol is there for this sender, and pass the message on to them.
+
         proto.messageReceived(*frames)
+
+    def sendRequest(self, remote_id, *messageParts, **kwargs):
+        """
+        Send request and deliver response back when available.
+
+        :param messageParts: message data
+        :type messageParts: tuple
+        :param timeout: as keyword argument, timeout on request
+        :type timeout: float
+        :return: Deferred that will fire when response comes back
+        """
+        message_id = MessageID()
+        d = defer.Deferred(canceller=lambda _: self._cancel(message_id))
+
+        timeout = kwargs.pop('timeout', None)
+        # if timeout is None:
+        #     timeout = self.defaultRequestTimeout
+        assert len(kwargs) == 0, "Unsupported keyword argument"
+
+        canceller = None
+        if timeout is not None:
+            canceller = reactor.callLater(timeout, self._timeoutRequest,
+                                          message_id)
+
+        self._requests[message_id] = (d, canceller)
+        self.send([remote_id, message_id, b''] + list(messageParts))
+        return d
+
+    def requestReplyReceived(self, msgId, msg):
+        """
+        Called on incoming request reply from ZeroMQ.
+
+        Dispatches message to back to the requestor.
+
+        :param message: message data
+        """
+        log.msg("requestReplyReceived %s -> %s" % (msgId, msg))
+        d, canceller = self._requests.pop(msgId, (None, None))
+
+        if canceller is not None and canceller.active():
+            canceller.cancel()
+
+        if d is None:
+            # reply came for timed out or cancelled request, drop it silently
+            log.msg("Received expired reply %s" % msgId)
+            return
+
+        d.callback(msg)
+
+    def requestReceived(self, remote_id, msgId, msg):
+        """
+        Called on incoming request message from ZeroMQ.
+
+        :param message: message data
+        """
+        # i = message.index(b'')
+        # assert i > 0
+        # (routingInfo, msgId, payload) = (
+        #     message[:i - 1], message[i - 1], message[i + 1:])
+        msgParts = msg[0:]
+        # self._routingInfo[msgId] = remote_id
+        return msgId, msgParts
 
 
 class ConnectionFactory(ZmqFactory):

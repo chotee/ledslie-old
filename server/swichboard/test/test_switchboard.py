@@ -2,14 +2,14 @@ from twisted.trial import unittest
 from twisted.test import proto_helpers
 
 from swichboard.switchboard import SwitchboardService
-from common.zmq_proto import Protocol, LichtkrantProtocol
+from common.zmq_proto import Protocol, LedslieProtocol
 
 
 class TestSwitchboardService(unittest.TestCase):
 
     def setUp(self):
         self.service = SwitchboardService()
-        self.client = LichtkrantProtocol()
+        self.client = LedslieProtocol()
 
     def test_forward_message(self):
         client = FakeRemoteClient()

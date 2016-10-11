@@ -3,13 +3,14 @@ from twisted.internet import task
 
 
 class SwitchboardService(object):
-    def __init__(self):
+    def __init__(self, rolodex):
         log.msg("Create %s" % self.__class__.__name__)
+        self._rolodex = rolodex
         self._roles = {}
         self._stats = {}
 
-    def start(self):
-        log.msg("Start called on %s" % self.__class__.__name__)
+    def req_reverse(self, client, request):
+        return request[::-1]
 
     def got_register(self, client, role):
         client.role = role
@@ -22,17 +23,16 @@ class SwitchboardService(object):
         for client in self._roles.get(for_role, []):
             client.send_message(message)
 
-
     # def got_stats(self, client):
     #     summary = ["Source, Dest, Count"]
     #     for src, dst in self._stats:
     #         summary.append(", ".join([src, dst, str(self._stats[src, dst])]))
     #     return "\n".join(summary)
 
-    def time_passes(self):
-        clients_list = set()
-        for role_client in self._roles.values():
-            clients_list.update(role_client)
-        for client in clients_list:
-            client.send_message("time's a wastin'")
-        log.msg("Time has passed")
+    # def time_passes(self):
+    #     clients_list = set()
+    #     for role_client in self._roles.values():
+    #         clients_list.update(role_client)
+    #     for client in clients_list:
+    #         client.send_message("time's a wastin'")
+    #     log.msg("Time has passed")

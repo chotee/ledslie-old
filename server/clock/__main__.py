@@ -1,11 +1,13 @@
 import sys
-from datetime import datetime
+
+from twisted.internet import reactor
+from twisted.internet.task import LoopingCall
+from twisted.python import log
+log.startLogging(sys.stdout)
 
 sys.path.insert(0, '.')
 
-from twisted.python import log
-from common.zmq_proto import ProtocolFactory
-from common.connections import ConnectionFactory
+from common.main import Main
 
 
 # class ClockProtocol(Protocol):
@@ -35,17 +37,19 @@ from common.connections import ConnectionFactory
 
 
 class ClockService(object):
-    pass
+    role = "clock"
 
-def main():
-    log.startLogging(sys.stdout)
-    clock_service = ClockService()
-    factory = ProtocolFactory(clock_service)
-    from twisted.internet import reactor
-    connector = ConnectionFactory(reactor, factory)
-    reactor.callWhenRunning(connector.connect, "tcp://127.0.0.1:8007", remote_identity="switch")
-    reactor.run()
+    def __init__(self, rolodex):
+        self.rolodex = rolodex
+        time_ticker = LoopingCall(self.time_informer)
+        reactor.callWhenRunning(time_ticker.start, 1)
+
+    def time_informer(self):
+        for remote in self.rolodex.all():
+            #remote.sendMessage("send_second", "tick-tock")
+            remote.sendRequest("reverse", "foo")
 
 if __name__ == '__main__':
-    log.startLogging(sys.stdout)
-    main()
+    connector = Main(ClockService)
+    reactor.callWhenRunning(connector.connect, "tcp://127.0.0.1:8007", remote_identity="switch")
+    reactor.run()
