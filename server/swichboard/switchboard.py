@@ -9,8 +9,11 @@ class SwitchboardService(object):
         self._roles = {}
         self._stats = {}
 
+    def got_send_second(self, message):
+        log.msg("got_send_second %s" % message)
+
     def req_reverse(self, client, request):
-        return request[::-1]
+        return "reversed", request[::-1]
 
     def got_register(self, client, role):
         client.role = role

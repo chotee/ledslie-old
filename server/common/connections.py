@@ -84,7 +84,7 @@ class Connection(ZmqRouterConnection):
             #log.msg("New sender %s" % sender_id)
             self.register_remote(remote_id)
         self.watchdog.report_activity(remote_id)
-        if (not frames[0]   # Connection activate message from PROBE_ROUTER.
+        if ((len(frames) == 1 and not frames[0])   # Connection activate message from PROBE_ROUTER.
             or frames[0] == b'ping'):  # A ping message
             return  # Done handling the ping.
 
@@ -95,7 +95,7 @@ class Connection(ZmqRouterConnection):
             if msgId in self._requests:
                 self.requestReplyReceived(msgId, msg_parts)
             else:
-                if msgId == b'000000':  # magic "No reply expected" request.
+                if msgId == b'':  # magic "No reply expected" request.
                     proto.messageReceived(msg_parts)
                 else:
                     proto.requestReceived(msgId, msg_parts)
@@ -110,7 +110,8 @@ class Connection(ZmqRouterConnection):
         :param messageParts: parts of the message.
         :type messageParts: tuple
         """
-        self.send([remote_id, b'000000', b''] + list(messageParts))
+        request_id = b''
+        self.send([remote_id, request_id, b''] + list(messageParts))
 
     def sendReply(self, remote_id, request_id, messageParts):
         self.send([remote_id, request_id, b''] + list(messageParts))

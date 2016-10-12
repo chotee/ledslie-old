@@ -28,7 +28,7 @@ class Protocol(protocol.Protocol):
         self.transport.sendMessage(self.remote_id, byte_frames)
 
     def sendRequest(self, *request_parts):
-        log.msg("sendRequest %s" % repr(request_parts))
+        #log.msg("sendRequest %s" % repr(request_parts))
         byte_frames = self._convert_to_bytes(request_parts)
         d = self.transport.sendRequest(self.remote_id, byte_frames)
         d.addCallback(self.replyReceived, request_parts)
@@ -41,17 +41,23 @@ class Protocol(protocol.Protocol):
         log.msg("replyReceived got %s -> %s" % (repr(request_parts), reply_message_parts))
 
     def requestReceived(self, request_id, parts):
-        log.msg("requestReceived request_id:%s, parts:%s" % (request_id,repr(parts)))
-        op, args = parts[0], parts[1:]
-        op_name = "req_" + op.decode()
-        meth = getattr(self.factory.service, op_name)
+        meth, args = self.requestMethod(parts)
         d = maybeDeferred(meth, self, *args)
         d.addCallback(self._reply_message, request_id)
         d.addErrback(self._reply_error, request_id)
         return d
 
+    def requestMethod(self, parts):
+        log.msg("requestMethod parts:%s" % (repr(parts)))
+        return self.reply, parts[1:]
+
+    def reply(self, *args):
+        raise NotImplementedError()
+
     def _reply_message(self, message, request_id):
-        byte_frames = self._convert_to_bytes([message])
+        if not isinstance(message, (list, tuple)):
+            message = [message]
+        byte_frames = self._convert_to_bytes(message)
         self.transport.sendReply(self.remote_id, request_id, byte_frames)
 
     def _reply_error(self, failure, request_id, *args):
@@ -91,6 +97,24 @@ class LedslieProtocol(Protocol):
     def __init__(self):
         super(LedslieProtocol, self).__init__()
 
+    def messageReceived(self, message_parts):
+        op, args = message_parts[0], message_parts[1:]
+        op_name = "got_" + op.decode()
+        meth = getattr(self.factory.service, op_name)
+        meth(*args)
+
+
+    def replyReceived(self, reply_message_parts, request_parts):
+        op, args = reply_message_parts[0], reply_message_parts[1:]
+        op_name = "rep_" + op.decode()
+        meth = getattr(self.factory.service, op_name)
+        meth(*args)
+
+    def requestMethod(self, parts):
+        op, args = parts[0], parts[1:]
+        op_name = "req_" + op.decode()
+        meth = getattr(self.factory.service, op_name)
+        return meth, args
 
 class ProtocolFactory(Factory):
     protocol = LedslieProtocol

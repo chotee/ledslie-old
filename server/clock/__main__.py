@@ -50,6 +50,9 @@ class ClockService(object):
             remote.sendMessage("send_second", datetime.now().isoformat("T"))
             remote.sendRequest("reverse", "foobar")
 
+    def rep_reversed(self, message):
+        log.msg("Got the reserve! %s" % message)
+
 if __name__ == '__main__':
     connector = Main(ClockService)
     reactor.callWhenRunning(connector.connect, "tcp://127.0.0.1:8007", remote_identity="switch")
