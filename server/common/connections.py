@@ -32,6 +32,7 @@ class Connection(ZmqRouterConnection):
         log.msg("Building connection for %s [%s]" % (remote_identity, endpoint))
         super().__init__(factory, endpoint, my_identity)
         self.socket.set(zmq_constants.PROBE_ROUTER, 1)
+        self.socket.set(zmq_constants.ROUTER_MANDATORY, 1)
         self.connecting = (endpoint.type == 'connect')
         self.watchdog = ConnectionWatchdog(self)
         self.senders = set()
@@ -61,14 +62,14 @@ class Connection(ZmqRouterConnection):
         protocol = self.factory.connection_established(self, remote_id)
         self.protocols[remote_id] = protocol
 
-    def sender_disconnected(self, sender_id):
+    def sender_disconnected(self, remote_id):
         """
         I get called when we have not received any traffic from a sender.
-        :param sender_id: The ID of the sender that we have lost
-        :type sender_id: str
+        :param remote_id: The ID of the sender that we have lost
+        :type remote_id: str
         """
-        log.msg("lost connection to %s" % sender_id)
-        self.factory.connection_lost(sender_id)
+        log.msg("lost connection to %s" % remote_id)
+        self.factory.connection_lost(remote_id)
 
     def gotMessage(self, remote_id, *frames):
         """
@@ -81,7 +82,7 @@ class Connection(ZmqRouterConnection):
         """
         #log.msg("gotMessage remote_id:%s frames:%s" % (remote_id, repr(frames)))
         if remote_id not in self.senders:
-            #log.msg("New sender %s" % sender_id)
+            #log.msg("New sender %s" % remote_id)
             self.register_remote(remote_id)
         self.watchdog.report_activity(remote_id)
         if ((len(frames) == 1 and not frames[0])   # Connection activate message from PROBE_ROUTER.
