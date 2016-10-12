@@ -17,7 +17,10 @@ def MessageID():
 
 
 class Connection(ZmqRouterConnection):
-    def __init__(self, factory, endpoint=None, my_identity=None, remote_identity=None):
+    ZmqNoRouteErrNo = 113  # Internal Number Zmq gives to the "No route to host" error triggered by
+    # sending to a closed connection when zmq_constants.ROUTER_MANDATORY=1
+
+    def __init__(self, factory, endpoint=None, my_identity=None, remote_identity=None, socket=None):
         """
         I am the connection to the other element.
         :param factory: The Connection Factory to use.
@@ -31,6 +34,8 @@ class Connection(ZmqRouterConnection):
         remote_identity = remote_identity.encode() if remote_identity else None
         log.msg("Building connection for %s [%s]" % (remote_identity, endpoint))
         super().__init__(factory, endpoint, my_identity)
+        if socket:
+            self.socket = socket
         self.socket.set(zmq_constants.PROBE_ROUTER, 1)
         self.socket.set(zmq_constants.ROUTER_MANDATORY, 1)
         self.connecting = (endpoint.type == 'connect')
@@ -112,10 +117,10 @@ class Connection(ZmqRouterConnection):
         :type messageParts: tuple
         """
         request_id = b''
-        self.send([remote_id, request_id, b''] + list(messageParts))
+        self.sendMultipart(remote_id, [request_id, b''] + list(messageParts))
 
     def sendReply(self, remote_id, request_id, messageParts):
-        self.send([remote_id, request_id, b''] + list(messageParts))
+        self.sendMultipart(remote_id, [request_id, b''] + list(messageParts))
 
     def sendRequest(self, remote_id, messageParts, **kwargs):
         """
@@ -141,8 +146,26 @@ class Connection(ZmqRouterConnection):
                                           message_id)
 
         self._requests[message_id] = (d, canceller)
-        self.send([remote_id, message_id, b''] + list(messageParts))
+        self.sendMultipart(remote_id, [message_id, b''] + list(messageParts))
         return d
+
+    def sendMultipart(self, remote_id, parts):
+        """
+        I am the lower level sender of messages.
+        :param remote_id: The Id to send the message to
+        :type remote_id: str
+        :param parts: The list with messages as they are send over the wire.
+        :type parts: list
+        """
+        try:
+            self.send([remote_id] + parts)
+        except zmq.ZMQError as exc:
+            if exc.errno == self.ZmqNoRouteErrNo:
+                # Sending to the remote, resulted in ZMQ flagging loss of connectivity. We're
+                # marking the connection as inactive.
+                self.watchdog.remove_active_connection(remote_id)
+            else:
+                raise
 
     def requestReplyReceived(self, msgId, msg):
         """
@@ -175,7 +198,7 @@ class ConnectionFactory(ZmqFactory):
         super().__init__()
         self.protocol_factory.startFactory()
 
-    def listen(self, uri, my_identity):
+    def listen(self, uri, my_identity, socket=None):
         """
         I listen to incoming connections.
         :param uri: The Port to bind to.
@@ -185,9 +208,9 @@ class ConnectionFactory(ZmqFactory):
         :return: None
         :rtype: None
         """
-        return self.connect(uri, method='bind', my_identity=my_identity)
+        return self.connect(uri, method='bind', my_identity=my_identity, socket=socket)
 
-    def connect(self, uri, method='connect', my_identity=None, remote_identity=None):
+    def connect(self, uri, method='connect', my_identity=None, remote_identity=None, socket=None):
         """
         I make a network connection to others.
         :param uri: The URI I need to talk to
@@ -204,7 +227,7 @@ class ConnectionFactory(ZmqFactory):
         endpoint = ZmqEndpoint(method, uri)
         log.msg("Doing %s to %s" % endpoint)
         d = Deferred()
-        reactor.callLater(0, self._create_connection, d, self, endpoint, my_identity, remote_identity)
+        reactor.callLater(0, self._create_connection, d, self, endpoint, my_identity, remote_identity, socket)
         d.addCallback(log.msg, "connect: %s(%s) to %s(%s)" % (endpoint.type, my_identity,
                                                endpoint.address, remote_identity))
         def _report_problem(msg):

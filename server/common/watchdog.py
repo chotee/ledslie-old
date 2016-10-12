@@ -1,5 +1,6 @@
 import time
 
+from twisted.python import log
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
 
@@ -48,6 +49,15 @@ class ConnectionWatchdog(object):
         if not review.running:
             review.start(self.grace_time)
 
+    def _stop_checkloops(self, remote_identity):
+        def stop_monitor(monitor, kind):
+            try:
+                monitor[kind].stop()
+            except AssertionError:
+                log.msg("Monitoring '%s' of %s was already stopped." % (kind, remote_identity))
+        stop_monitor(self.monitors[remote_identity], 'beat')
+        stop_monitor(self.monitors[remote_identity], 'review')
+
     def _send_beat(self, remote_identity):
         """
         I send a single beat message to the sender with remote_identity via the self.connection object.
@@ -69,11 +79,8 @@ class ConnectionWatchdog(object):
         last_seen = self.last_seen[remote_identity]
         if last_seen + self.grace_time > time.time():
             return  # Still active.
-        if remote_identity in self.actives:
-            self.actives.remove(remote_identity)
-            self.monitors[remote_identity]['beat'].stop()
-            self.monitors[remote_identity]['review'].stop()
-            self.connection.sender_disconnected(remote_identity)
+        # The connection has not been active for too long.
+        self.remove_active_connection(remote_identity)
 
     def report_activity(self, remote_identity):
         """
@@ -83,7 +90,26 @@ class ConnectionWatchdog(object):
         """
         #log.msg("%s is alive" % remote_identity)
         self.last_seen[remote_identity] = time.time()
+        self.add_active_connection(remote_identity)
+
+    def add_active_connection(self, remote_identity):
+        """
+        I get called when a connection needs to be setup as active inside the watchdog.
+        :param remote_identity: The Id of the remote object to watchover
+        :type remote_identity: str
+        """
         if remote_identity not in self.actives:
             self.actives.add(remote_identity)
             self._start_checkloops(remote_identity)
             self.connection.sender_established(remote_identity)
+
+    def remove_active_connection(self, remote_identity):
+        """
+        I get called when an connection that was previously active gets scrapped.
+        :param remote_identity: Identity of remote to remove.
+        :type remote_identity: str
+        """
+        if remote_identity in self.actives:
+            self.actives.remove(remote_identity)
+            self._stop_checkloops(remote_identity)
+            self.connection.sender_disconnected(remote_identity)
