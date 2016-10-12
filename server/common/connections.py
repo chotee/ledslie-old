@@ -37,7 +37,7 @@ class Connection(ZmqRouterConnection):
         self.senders = set()
         self.protocols = {}
         self._requests = {}
-        self._routingInfo = {}
+        #self._routingInfo = {}
         if self.connecting:
             assert remote_identity, "For connecting, a remote identity is required."
             self.register_remote(remote_identity)
@@ -79,7 +79,7 @@ class Connection(ZmqRouterConnection):
         :param frames: All the frames of the message.
         :type frames: tuple
         """
-        log.msg("gotMessage remote_id:%s frames:%s" % (remote_id, repr(frames)))
+        #log.msg("gotMessage remote_id:%s frames:%s" % (remote_id, repr(frames)))
         if remote_id not in self.senders:
             #log.msg("New sender %s" % sender_id)
             self.register_remote(remote_id)
@@ -88,19 +88,34 @@ class Connection(ZmqRouterConnection):
             or frames[0] == b'ping'):  # A ping message
             return  # Done handling the ping.
 
+        # look up what protocol is there for this sender, and pass the message on to them.
         proto = self.protocols[remote_id]
         if len(frames) > 2 and frames[1] == b'':  # This looks like a request message
-            msgId, msg = frames[0], frames[2:]
+            msgId, msg_parts = frames[0], frames[2:]
             if msgId in self._requests:
-                self.requestReplyReceived(msgId, msg)
+                self.requestReplyReceived(msgId, msg_parts)
             else:
-                proto.requestReceived(*self.requestReceived(remote_id, msgId, msg))
-                return
-        # look up what protocol is there for this sender, and pass the message on to them.
+                if msgId == b'000000':  # magic "No reply expected" request.
+                    proto.messageReceived(msg_parts)
+                else:
+                    proto.requestReceived(msgId, msg_parts)
+            return
+        log.msg("UNKNOWN message structure: remote:%s frames:%s" % (remote_id, frames))
 
-        proto.messageReceived(*frames)
+    def sendMessage(self, remote_id, messageParts):
+        """
+        I send a message that I don't expect an answer back for.
+        :param remote_id: identifier of the destination
+        :type remote_id: bytes
+        :param messageParts: parts of the message.
+        :type messageParts: tuple
+        """
+        self.send([remote_id, b'000000', b''] + list(messageParts))
 
-    def sendRequest(self, remote_id, *messageParts, **kwargs):
+    def sendReply(self, remote_id, request_id, messageParts):
+        self.send([remote_id, request_id, b''] + list(messageParts))
+
+    def sendRequest(self, remote_id, messageParts, **kwargs):
         """
         Send request and deliver response back when available.
 
@@ -135,7 +150,7 @@ class Connection(ZmqRouterConnection):
 
         :param message: message data
         """
-        log.msg("requestReplyReceived %s -> %s" % (msgId, msg))
+        #log.msg("requestReplyReceived %s -> %s" % (msgId, msg))
         d, canceller = self._requests.pop(msgId, (None, None))
 
         if canceller is not None and canceller.active():
@@ -147,20 +162,6 @@ class Connection(ZmqRouterConnection):
             return
 
         d.callback(msg)
-
-    def requestReceived(self, remote_id, msgId, msg):
-        """
-        Called on incoming request message from ZeroMQ.
-
-        :param message: message data
-        """
-        # i = message.index(b'')
-        # assert i > 0
-        # (routingInfo, msgId, payload) = (
-        #     message[:i - 1], message[i - 1], message[i + 1:])
-        msgParts = msg[0:]
-        # self._routingInfo[msgId] = remote_id
-        return msgId, msgParts
 
 
 class ConnectionFactory(ZmqFactory):

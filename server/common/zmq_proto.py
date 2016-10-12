@@ -12,6 +12,11 @@ class Protocol(protocol.Protocol):
     """
     I keep the state of one connection and handle the messages that might be send.
     """
+
+    def makeConnection(self, transport, remote_id=None):
+        self.remote_id = remote_id
+        super(Protocol, self).makeConnection(transport)
+
     def connectionMade(self):
         log.msg("New connection")
 
@@ -19,19 +24,21 @@ class Protocol(protocol.Protocol):
         log.msg("Connection lost: %s" % reason)
 
     def sendMessage(self, *messageParts):
-        self.transport.send(*messageParts)
+        byte_frames = self._convert_to_bytes(messageParts)
+        self.transport.sendMessage(self.remote_id, byte_frames)
 
     def sendRequest(self, *request_parts):
         log.msg("sendRequest %s" % repr(request_parts))
-        d = self.transport.send_request(*request_parts)
+        byte_frames = self._convert_to_bytes(request_parts)
+        d = self.transport.sendRequest(self.remote_id, byte_frames)
         d.addCallback(self.replyReceived, request_parts)
         return d
 
-    def messageReceived(self, *message_parts):
+    def messageReceived(self, message_parts):
         log.msg("messageReceived got %s" % (repr(message_parts)))
 
     def replyReceived(self, reply_message_parts, request_parts):
-        log.msg("replyReceived got %s -> %s" % (repr(request_parts, reply_message_parts)))
+        log.msg("replyReceived got %s -> %s" % (repr(request_parts), reply_message_parts))
 
     def requestReceived(self, request_id, parts):
         log.msg("requestReceived request_id:%s, parts:%s" % (request_id,repr(parts)))
@@ -44,7 +51,8 @@ class Protocol(protocol.Protocol):
         return d
 
     def _reply_message(self, message, request_id):
-        self.transport.send(request_id, message)
+        byte_frames = self._convert_to_bytes([message])
+        self.transport.sendReply(self.remote_id, request_id, byte_frames)
 
     def _reply_error(self, failure, request_id, *args):
         self._reply_message(str(failure), request_id)
@@ -68,6 +76,16 @@ class Protocol(protocol.Protocol):
         d, _ = self._requests.pop(msgId, (None, None))
         if not d.called:
             d.errback(ZmqRequestTimeoutError(msgId))
+
+    def _convert_to_bytes(self, data_frames):
+        byte_frames = []
+        for frame in data_frames:
+            try:
+                byte_frames.append(frame.encode())
+            except AttributeError as exc:
+                byte_frames.append(frame)
+        return byte_frames
+
 
 class LedslieProtocol(Protocol):
     def __init__(self):
@@ -95,8 +113,7 @@ class ProtocolFactory(Factory):
         except KeyError:
             proto = super(ProtocolFactory, self).buildProtocol(remote_id)
             self.rolodex.add_proto(proto, remote_id)
-        transport = ZmqTransport(connection, remote_id)
-        proto.makeConnection(transport)
+        proto.makeConnection(connection, remote_id=remote_id)
         return proto
 
     def connection_lost(self, remote_id):
@@ -121,32 +138,3 @@ class Rolodex(object):
 
     def all(self):
         return self.remotes.values()
-
-
-class ZmqTransport(object):
-    def __init__(self, connection, remote_id):
-        """
-        Small helper that keeps track of the remote_id
-        :param connection: The connection to the peer
-        :type connection: Connection
-        :param remote_id: ID of the remote connection.
-        :type remote_id: str
-        """
-        self.connection = connection
-        self.remote_id = remote_id
-
-    def send(self, request_id, *message_parts):
-        byte_frames = self._convert_to_bytes(message_parts)
-        self.connection.sendMultipart(self.remote_id, [request_id] + list(byte_frames))
-
-    def send_request(self, *message_parts):
-        return self.connection.sendRequest(self.remote_id, *[p.encode() for p in message_parts])
-
-    def _convert_to_bytes(self, data_frames):
-        byte_frames = []
-        for frame in data_frames:
-            try:
-                byte_frames.append(frame.encode())
-            except AttributeError as exc:
-                byte_frames.append(frame)
-        return byte_frames

@@ -1,4 +1,5 @@
 import sys
+from datetime import datetime
 
 from twisted.internet import reactor
 from twisted.internet.task import LoopingCall
@@ -46,8 +47,8 @@ class ClockService(object):
 
     def time_informer(self):
         for remote in self.rolodex.all():
-            #remote.sendMessage("send_second", "tick-tock")
-            remote.sendRequest("reverse", "foo")
+            remote.sendMessage("send_second", datetime.now().isoformat("T"))
+            remote.sendRequest("reverse", "foobar")
 
 if __name__ == '__main__':
     connector = Main(ClockService)
