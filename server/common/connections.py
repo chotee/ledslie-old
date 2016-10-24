@@ -33,12 +33,12 @@ class Connection(ZmqRouterConnection):
         my_identity = my_identity.encode() if my_identity else None
         remote_identity = remote_identity.encode() if remote_identity else None
         log.msg("Building connection for %s [%s]" % (remote_identity, endpoint))
-        super().__init__(factory, endpoint, my_identity)
+        super().__init__(factory, endpoint=endpoint, identity=my_identity)
         if socket:
             self.socket = socket
         self.socket.set(zmq_constants.PROBE_ROUTER, 1)
         self.socket.set(zmq_constants.ROUTER_MANDATORY, 1)
-        self.connecting = (endpoint.type == 'connect')
+        self.connecting = (endpoint.type == 'connect') if endpoint else None
         self.watchdog = ConnectionWatchdog(self)
         self.senders = set()
         self.protocols = {}
