@@ -21,7 +21,9 @@
 #define HEARTBEAT_PIN 5 // I toggle high/low when a full cycle is complete
 #define SERIAL_LOAD_PIN 6 // I toggle high when serial is being read
 
-#define BAUD_RATE 115200
+//#define BAUD_RATE 115200
+#define BAUD_RATE 9600
+
 
 // While one Bitmap is being displayed, the other gets filled.
 uint8_t bitmapA[display_size]; // Reserve space for two bitmaps.
@@ -39,8 +41,8 @@ void setup()
   SPI.beginTransaction(SPISettings(15000000, MSBFIRST, SPI_MODE0));
   // Init the whole bitmap to 0 first.
   for (int16_t i=0; i<display_size; i++) {
-    bitmapA[i] = 0x5;
-    bitmapB[i] = 0xB;
+    bitmapA[i] = 0x05;
+    bitmapB[i] = 0xFB;
   }
   Serial.begin(BAUD_RATE);  // Setup the serial line to read from
   Serial.println("Ledslie Refresher Ready");
@@ -72,7 +74,9 @@ void update_column(
     // I send over all the data of one column of all the elements in the display
     uint8_t col_select = ~(1<<col); // column selection Byte
     // Shift the bytes into the display
-    for(int16_t e = elem_display_count; e >= 0; --e) {
+    //Serial.println("-");
+    for(int16_t e = elem_display_count-1; e >= 0; --e) {
+        //Serial.println(e);
         // Shift in one byte for each element in the display
         transfer(bitmap_display[e*col_per_elem+col]);
         if(e % elem_pcb_count == 0) { // Add the col_select byte after each elem_pcb_count bytes
@@ -88,11 +92,15 @@ void update_column(
 void read_input() {
     digitalWrite(SERIAL_LOAD_PIN, HIGH);
     for(uint8_t t = Serial.available(); t>0; --t) {
-        bitmap_load[load_counter] = Serial.read();
-        load_counter++;
-        if(load_counter == display_size) {
-            swap_bitmaps();
-        }
+        int8_t c = Serial.read() - '0';
+        for(int16_t i = 0; i<=display_size; i++)
+            bitmap_load[i] = c;
+        swap_bitmaps();
+        // bitmap_load[load_counter] = Serial.read();
+        // // load_counter++;
+        // // if(load_counter == display_size) {
+        // //     swap_bitmaps();
+        // // }
     }
     digitalWrite(SERIAL_LOAD_PIN, LOW);
 }
