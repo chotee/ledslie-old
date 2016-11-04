@@ -16,7 +16,8 @@
 #define elem_display_count elem_line_count*display_line_count // number of elements in the whole display
 #define display_size elem_display_count*col_per_elem // Number of bytes to represent a whole display.
 
-
+// SPI CLOCK_PIN 13
+// SPI DATA_PIN 11
 #define LATCH_PIN 9  // I latch the data of a single column to display it.
 #define HEARTBEAT_PIN 5 // I toggle high/low when a full cycle is complete
 #define SERIAL_LOAD_PIN 6 // I toggle high when serial is being read
@@ -38,11 +39,11 @@ void setup()
   pinMode(HEARTBEAT_PIN, OUTPUT);
   pinMode(SERIAL_LOAD_PIN, OUTPUT);
   SPI.begin();
-  SPI.beginTransaction(SPISettings(15000000, MSBFIRST, SPI_MODE0));
+  SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));
   // Init the whole bitmap to 0 first.
   for (int16_t i=0; i<display_size; i++) {
-    bitmapA[i] = 0x05;
-    bitmapB[i] = 0xFB;
+    bitmapA[i] = 0x00;
+    bitmapB[i] = 0x00;
   }
   Serial.begin(BAUD_RATE);  // Setup the serial line to read from
   Serial.println("Ledslie Refresher Ready");
