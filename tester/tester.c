@@ -4,7 +4,7 @@
 
 #define col_per_elem 8   // Every LED element has 8 columns.
 #define elem_pcb_count 6  // Every PCB has 6 elements
-#define pcb_line_count 3  // There are 3 PCBs in one line
+#define pcb_line_count 1  // There are 3 PCBs in one line
 #define display_line_count 1 // A display as 3 lines
 #define elem_line_count elem_pcb_count*pcb_line_count // Number of elements in a line
 #define elem_display_count elem_line_count*display_line_count // number of elements in the whole display
@@ -49,7 +49,8 @@ void setup()
   // SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));
   // Init the whole bitmap to 0 first.
   int16_t i;
-  for (i=0; i<display_size; i++) {
+  printf("Display size: %d\n", display_size);
+  for (i=0; i < display_size; i++) {
     bitmapA[i] = 0x00;
     bitmapB[i] = 0x00;
   }
@@ -93,10 +94,11 @@ void transfer(uint8_t data) {
 void update_column(
         uint8_t col // elements column that we're trying to fill
     ) {
+    printf("update_column, col = %d\n", col);
     // I send over all the data of one column of all the elements in the display
     uint8_t col_select = ~(1<<col); // column selection Byte
-    // Shift the bytes into the display
-    //Serial.println("-");
+    // // Shift the bytes into the display
+    // //Serial.println("-");
     int16_t e;
     for(e = elem_display_count-1; e >= 0; --e) {
         //Serial.println(e);
@@ -113,39 +115,57 @@ void update_column(
 }
 
 void show(uint8_t c) {
-    printf("%#08x\n", c);
+    printf("%#04x\n", c);
 }
 
+uint8_t get_char() {
+  int r=1;
+  uint8_t c;
+  uint8_t d = '0';
+  while (r > 0) {
+    r = scanf("%c", &c);
+    /* printf("r=%d\n", r); */
+    printf("c=%d\n", c);
+    if (c == 0x0a) {
+      return d;
+    } else {
+      d = c;
+    }
+  }
+  return '0';
+}
 
 void read_input() {
     digitalWrite(SERIAL_LOAD_PIN, HIGH);
-    // for(uint8_t t = Serial.available(); t>0; --t) {
-    uint8_t c;
-    scanf("%c", &c);
+    /* // for(uint8_t t = Serial.available(); t>0; --t) { */
+    uint8_t c = get_char();
     c = c - '0';
     show(c);
     uint16_t i = 0;
-    for(i = 0; i<=display_size; i++) {
-        bitmap_load[i] = c;
+    for(i = 0; i < display_size; i++) {
+      bitmap_load[i] = c;
+      /* printf("i:%d c:%d\n", i, c ); */
+      c++;
     }
     swap_bitmaps();
-        // bitmap_load[load_counter] = Serial.read();
-        // // load_counter++;
-        // // if(load_counter == display_size) {
-        // //     swap_bitmaps();
-        // // }
-    // }
+    /*     // bitmap_load[load_counter] = Serial.read(); */
+    /*     // // load_counter++; */
+    /*     // // if(load_counter == display_size) { */
+    /*     // //     swap_bitmaps(); */
+    /*     // // } */
+    /* // } */
     digitalWrite(SERIAL_LOAD_PIN, LOW);
 }
 
 void loop()
 {
     //SPI.transfer(0xC);
-    uint8_t c;
-    for(c = 0; c < col_per_elem; c++) {
-        update_column(c);
-        read_input();
+    uint8_t col;
+    for(col = 0; col < col_per_elem; col++) {
+        /* printf("main c = %d\n", col); */
+        update_column(col);
     }
+    read_input();
     toggle_pin(HEARTBEAT_PIN); // Pin to measure software performance.
 }
 
