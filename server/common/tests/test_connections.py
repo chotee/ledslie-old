@@ -39,7 +39,6 @@ class TestConnectionFactory(unittest.TestCase):
     def test_test(self):
         self.assertTrue(True)
 
-
     # def test_connect(self):
     #     self.factory.connect("inproc://#1", my_identity="my_id", remote_identity="remote_id")
 

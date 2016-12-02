@@ -42,10 +42,12 @@ void setup()
   SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));
   // Init the whole bitmap to 0 first.
   for (int16_t i=0; i<display_size; i++) {
-    bitmapA[i] = 0x00;
+    bitmapA[i] = 0b01010101;
     bitmapB[i] = 0x00;
   }
   Serial.begin(BAUD_RATE);  // Setup the serial line to read from
+  Serial.print("Display size: ");
+  Serial.println(display_size);
   Serial.println("Ledslie Refresher Ready");
 }
 
@@ -73,7 +75,7 @@ void update_column(
         uint8_t col // elements column that we're trying to fill
     ) {
     // I send over all the data of one column of all the elements in the display
-    uint8_t col_select = ~(1<<col); // column selection Byte
+    uint8_t col_select = ~(1<<(col_per_elem-1-col)); // column selection Byte
     // Shift the bytes into the display
     //Serial.println("-");
     for(int16_t e = elem_display_count-1; e >= 0; --e) {
@@ -90,18 +92,21 @@ void update_column(
     digitalWrite(LATCH_PIN, HIGH);
 }
 
+
 void read_input() {
     digitalWrite(SERIAL_LOAD_PIN, HIGH);
     for(uint8_t t = Serial.available(); t>0; --t) {
-        int8_t c = Serial.read() - '0';
-        for(int16_t i = 0; i<=display_size; i++)
-            bitmap_load[i] = c;
-        swap_bitmaps();
-        // bitmap_load[load_counter] = Serial.read();
-        // // load_counter++;
-        // // if(load_counter == display_size) {
-        // //     swap_bitmaps();
-        // // }
+        // uint8_t c = Serial.read() - '0';
+        // uint16_t i = 0;
+        // for(i = 0; i<display_size; i++)
+        //     bitmap_load[i] = c+(i % 255);
+        //     // c++;
+        // swap_bitmaps();
+        bitmap_load[load_counter] = Serial.read() - '0';
+        load_counter++;
+        if(load_counter == display_size) {
+            swap_bitmaps();
+        }
     }
     digitalWrite(SERIAL_LOAD_PIN, LOW);
 }
@@ -109,7 +114,8 @@ void read_input() {
 void loop()
 {
     //SPI.transfer(0xC);
-    for(uint8_t c=0; c < col_per_elem; c++) {
+    uint8_t c = 0;
+    for(c=0; c < col_per_elem; c++) {
         update_column(c);
         read_input();
     }
