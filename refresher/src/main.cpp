@@ -22,8 +22,8 @@
 #define HEARTBEAT_PIN 5 // I toggle high/low when a full cycle is complete
 #define SERIAL_LOAD_PIN 6 // I toggle high when serial is being read
 
-//#define BAUD_RATE 115200
-#define BAUD_RATE 9600
+#define BAUD_RATE 57600
+//#define BAUD_RATE 9600
 
 
 // While one Bitmap is being displayed, the other gets filled.
