@@ -1,5 +1,6 @@
 #include "Arduino.h"
 #include <ESP8266WiFi.h>
+#include <giflib/gif_lib.h>
 #include "secret.h"
 
 //how many clients should be able to telnet to this ESP8266
