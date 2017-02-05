@@ -5,5 +5,7 @@ DEPS =
 %.o: %.c $(DEPS)
 	$(CC) -ggdb -c -o $@ $< $(CFLAGS)
 
-tester: tester.o
-	gcc -o tester tester.o -I.
+test_refresher: test_refresher.o
+	gcc -o test_refresher test_refresher.o -I.
+
+all: test_refresher
