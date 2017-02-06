@@ -5,6 +5,7 @@ secret.h
 __pycache__/
 *\.png
 \.idea/
+*\.o
 /docs/*\.html
 /docs/*\.png
 */_trial_temp/
