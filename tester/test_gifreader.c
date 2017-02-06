@@ -17,12 +17,18 @@ int main()
         printf("problems parsing %s", gif_filename);
         return 1;
     }
-    for(int i=0; i<8*8; i++) {
-        if(i > 0 && i % 8 == 0) {
-            printf("\n");
+
+    GifWord width = gif->SavedImages->ImageDesc.Width;
+    char b = 0;
+    for(int j=0; j<8; j++) {
+        unsigned char res = 0;
+        for(int i=0; i<8; i++) {
+            int pos = j+(i*width);
+            b = gif->SavedImages->RasterBits[j+(i*width)];
+            res = res | (b << i);
+            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
         }
-        int b = gif->SavedImages->RasterBits[i];
-        printf("%d", b);
+        printf("%02x\n", res, res);
     }
     printf("\n");
     return 0;
