@@ -7,6 +7,29 @@ FILE *fp;
 #define DISPLAY_WIDTH 3*6*8
 #define DISPLAY_ROWS 3
 
+void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
+    for(int j=0; j<(DISPLAY_WIDTH*DISPLAY_ROWS); j++) {
+        char b = 0;
+        unsigned char res = 0;
+        for(int i=0; i<8; i++) {
+//            int pos = j+(i*width);
+            b = RasterBits[j+(i*DISPLAY_WIDTH)];
+            res = res | (b << i);
+//            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
+        }
+        display_bytes[j] = res;
+        // printf("%02x\n", display_bytes[j]);
+    }
+    // printf("\n");
+}
+
+void print_bytes(uint8_t *display_bytes) {
+    for(int k=0; k<(DISPLAY_WIDTH*DISPLAY_ROWS); k++) {
+        printf("%02x", display_bytes[k]);
+    }
+    printf("\n");
+}
+
 int main()
 {
     char gif_filename[] = "test_2layers.gif";
@@ -22,21 +45,18 @@ int main()
         return 1;
     }
 
-    GifWord width = gif->SavedImages->ImageDesc.Width;
-    GifWord height = gif->SavedImages->ImageDesc.Height;
     uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
-    for(int j=0; j<(DISPLAY_WIDTH*DISPLAY_ROWS); j++) {
-        char b = 0;
-        unsigned char res = 0;
-        for(int i=0; i<8; i++) {
-//            int pos = j+(i*width);
-            b = gif->SavedImages->RasterBits[j+(i*DISPLAY_WIDTH)];
-            res = res | (b << i);
-//            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
+    for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
+        GifWord width = gif->SavedImages[frameNr].ImageDesc.Width;
+        GifWord height = gif->SavedImages[frameNr].ImageDesc.Height;
+        if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
+            printf("Frame is wrong size %dx%d should be (%dx%d)\n",
+                   width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+            continue;
         }
-        display_bytes[j] = res;
-        printf("%02x\n", display_bytes[j]);
+        image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
+        print_bytes(display_bytes);
+        printf("--------\n");
     }
-    printf("\n");
     return 0;
 }
