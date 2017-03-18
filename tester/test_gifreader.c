@@ -18,9 +18,9 @@ void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
 //            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
         }
         display_bytes[j] = res;
-        // printf("%02x\n", display_bytes[j]);
+        printf("%02x", display_bytes[j]);
     }
-    // printf("\n");
+    printf("\n");
 }
 
 void print_bytes(uint8_t *display_bytes) {
@@ -30,9 +30,20 @@ void print_bytes(uint8_t *display_bytes) {
     printf("\n");
 }
 
+int16_t get_frame_delay(SavedImage frame) {
+    int16_t delay = -1;
+    for(uint8_t t=0; t<frame.ExtensionBlockCount; t++) {
+        ExtensionBlock block = frame.ExtensionBlocks[t];
+        if(block.Function == 0xf9) {
+            delay = (block.Bytes[2]*255 + block.Bytes[1])*10;
+        }
+    }
+    return delay;
+}
+
 int main()
 {
-    char gif_filename[] = "test_2layers.gif";
+    char gif_filename[] = "test_3layers.gif";
     GifFileType *gif;
     int *gif_err = 0;
     gif = DGifOpenFileName(gif_filename, gif_err);
@@ -44,19 +55,20 @@ int main()
         printf("problems parsing %s", gif_filename);
         return 1;
     }
-
+    GifWord width = gif->SWidth;
+    GifWord height = gif->SHeight;
+    if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
+        printf("Frame is wrong size %dx%d should be (%dx%d)\n",
+               width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+        return 1;
+    }
     uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
     for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
-        GifWord width = gif->SavedImages[frameNr].ImageDesc.Width;
-        GifWord height = gif->SavedImages[frameNr].ImageDesc.Height;
-        if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
-            printf("Frame is wrong size %dx%d should be (%dx%d)\n",
-                   width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
-            continue;
-        }
+        SavedImage frame = gif->SavedImages[frameNr];
+        int16_t frame_delay = get_frame_delay(frame);
+        printf("------ Frame %d shown for %dms ------\n", frameNr, frame_delay);
         image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
-        print_bytes(display_bytes);
-        printf("--------\n");
+        //print_bytes(display_bytes);
     }
     return 0;
 }
