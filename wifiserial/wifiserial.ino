@@ -1,10 +1,14 @@
 
+#include <inttypes.h>
 #include <WiFi.h>
 #include "secret.h"
-#include <inttypes.h>
+#include "giflib/gif_lib.h"
 
 const char* ssid     = SSID_NAME;
 const char* password = SSID_PASS;
+
+#define DISPLAY_WIDTH 3*6*8
+#define DISPLAY_ROWS 3
 
 WiFiServer server(80);
 
@@ -120,10 +124,66 @@ void printRequestResults(struct request_struct *request) {
     Serial.println("-------------");
     Serial.println(request->verb);
     Serial.println(request->path);
-    //Serial.println(request.content);
+    Serial.println(request->content);
     Serial.print(request->contentLength);
     Serial.print(" bytes of ");
     Serial.println(request->contentType);
+}
+
+struct FakeHandle {
+    String content;
+    uint16_t pos;
+};
+
+static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
+    struct FakeHandle* data = (struct FakeHandle*) ft->UserData;
+    Serial.print("content_read_func reading from ");
+    Serial.print(data->pos);
+    Serial.print(" to ");
+    Serial.print(data->pos+arg);
+    byte buf[arg];
+    data->content.substring(data->pos, data->pos+arg).getBytes(buf, arg);
+    Serial.print(". Sending: '");
+    Serial.write(buf, arg);
+    Serial.println("'.");
+
+    memcpy(bt, buf, arg);
+    data->pos += arg;
+    return arg;
+}
+
+GifFileType* parseGif(String content) {
+    GifFileType *gif;
+    int *gif_err = 0;
+    struct FakeHandle handle;
+    handle.content = content;
+    handle.pos = 0;
+    //byte* data = (byte*)malloc(content.length());
+    //content.getBytes(data, content.length());
+    DGifOpen(&handle, &content_read_func, gif_err);
+    if (gif == NULL || gif_err != 0)
+    {
+        Serial.print("Failure to parse GIF. Error: ");
+        Serial.println(String(*gif_err));
+        if (gif != NULL) {
+            EGifCloseFile (gif, NULL);
+        }
+        return NULL; /* not a GIF */
+    }
+    // free(data);
+    // data = NULL;
+    return gif;
+}
+
+int16_t get_frame_delay(SavedImage frame) {
+    int16_t delay = -1;
+    for(uint8_t t=0; t<frame.ExtensionBlockCount; t++) {
+        ExtensionBlock block = frame.ExtensionBlocks[t];
+        if(block.Function == 0xf9) {
+            delay = (block.Bytes[2]*255 + block.Bytes[1])*10;
+        }
+    }
+    return delay;
 }
 
 void handleClient(WiFiClient client) {
@@ -133,6 +193,30 @@ void handleClient(WiFiClient client) {
     printRequestResults(&request);
     if(request.verb == "GET") {
         displayPage(client, "OK");
+    } else if(request.verb == "POST" && request.contentType == "image/gif") {
+        GifFileType *gif = parseGif(request.content);
+        if(gif == NULL) {
+            return;
+        }
+        GifWord width = gif->SWidth;
+        GifWord height = gif->SHeight;
+        if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
+            Serial.println("Frame is wrong size");// %dx%d should be (%dx%d)\n",
+                   //width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+            return;
+        }
+        uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
+        for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
+            SavedImage frame = gif->SavedImages[frameNr];
+            int16_t frame_delay = get_frame_delay(frame);
+            Serial.print("------ Frame ");
+            Serial.print(frameNr);
+            Serial.print(" shown for ");
+            Serial.print(frame_delay);
+            Serial.println("ms ------");
+//            image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
+
+        }
     }
 }
 
@@ -145,51 +229,78 @@ void loop() {
         Serial.println("client disonnected");
     }
 };
-// if (client) {                             // if you get a client,
-//     while (client.connected()) {            // loop while the client's connected
-//       if (client.available()) {             // if there's bytes to read from the client,
-//         char c = client.read();             // read a byte, then
-//         Serial.write(c);                    // print it out the serial monitor
-//         if (c == '\n') { // if the byte is a newline character
-//           // if the current line is blank, you got two newline characters in a row.
-//           // that's the end of the client HTTP request, so send a response:
-//           if (currentLine.length() == 0) {
-//             clientState = BODY;
-//             // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
-//             // and a content-type so the client knows what's coming, then a blank line:
-//             // break out of the while loop:
-//             break;
-//           } else {    // if you got a newline, then clear currentLine:
-//               int headerMark = currentLine.indexOf(':');
-//               if (headerMark != -1) {
-//                   String headerName  = currentLine.substring(0, headerMark);
-//                   String headerValue = currentLine.substring(headerMark+2);
-//                   Serial.print("\"");
-//                   Serial.print(headerName);
-//                   Serial.println("\"");
-//                   Serial.print("\" = \"");
-//                   Serial.print(headerValue);
-//                   Serial.println("\"");
-//                   if(headerName == "Content-Length") {
-//                       contentLength = headerValue.toInt();
-//                   }
-//               }
-//             currentLine = "";
-//           }
-//         } else if (c != '\r') {  // if you got anything else but a carriage return character,
-//           currentLine += c;      // add it to the end of the currentLine
+
+// ///////////////
+// #include <stdio.h>
+// #include <inttypes.h>
+//
+// FILE *fp;
+//
+// #define DISPLAY_WIDTH 3*6*8
+// #define DISPLAY_ROWS 3
+//
+// void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
+//     for(int j=0; j<(DISPLAY_WIDTH*DISPLAY_ROWS); j++) {
+//         char b = 0;
+//         unsigned char res = 0;
+//         for(int i=0; i<8; i++) {
+// //            int pos = j+(i*width);
+//             b = RasterBits[j+(i*DISPLAY_WIDTH)];
+//             res = res | (b << i);
+// //            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
 //         }
-//         // // Check to see if the client request was "GET /H" or "GET /L":
-//         // if (currentLine.endsWith("GET /H")) {
-//         //   digitalWrite(5, HIGH);               // GET /H turns the LED on
-//         // }
-//         // if (currentLine.endsWith("GET /L")) {
-//         //   digitalWrite(5, LOW);                // GET /L turns the LED off
-//         // }
-//       }
+//         display_bytes[j] = res;
+//         printf("%02x", display_bytes[j]);
 //     }
-//     // close the connection:
-//     client.stop();
-//     Serial.println("client disonnected");
-//   }
+//     printf("\n");
+// }
+//
+// void print_bytes(uint8_t *display_bytes) {
+//     for(int k=0; k<(DISPLAY_WIDTH*DISPLAY_ROWS); k++) {
+//         printf("%02x", display_bytes[k]);
+//     }
+//     printf("\n");
+// }
+//
+// int16_t get_frame_delay(SavedImage frame) {
+//     int16_t delay = -1;
+//     for(uint8_t t=0; t<frame.ExtensionBlockCount; t++) {
+//         ExtensionBlock block = frame.ExtensionBlocks[t];
+//         if(block.Function == 0xf9) {
+//             delay = (block.Bytes[2]*255 + block.Bytes[1])*10;
+//         }
+//     }
+//     return delay;
+// }
+//
+// int main()
+// {
+//     char gif_filename[] = "test_3layers.gif";
+//     GifFileType *gif;
+//     int *gif_err = 0;
+//     gif = DGifOpenFileName(gif_filename, gif_err);
+//     if(gif == NULL) {
+//         printf("Can't read file '%s'. %d", gif_filename, *gif_err);
+//         return 1;
+//     }
+//     if(DGifSlurp(gif) == GIF_ERROR) {
+//         printf("problems parsing %s", gif_filename);
+//         return 1;
+//     }
+//     GifWord width = gif->SWidth;
+//     GifWord height = gif->SHeight;
+//     if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
+//         printf("Frame is wrong size %dx%d should be (%dx%d)\n",
+//                width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+//         return 1;
+//     }
+//     uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
+//     for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
+//         SavedImage frame = gif->SavedImages[frameNr];
+//         int16_t frame_delay = get_frame_delay(frame);
+//         printf("------ Frame %d shown for %dms ------\n", frameNr, frame_delay);
+//         image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
+//         //print_bytes(display_bytes);
+//     }
+//     return 0;
 // }

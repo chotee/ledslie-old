@@ -1,4 +1,6 @@
+#include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 #include <inttypes.h>
 #include "giflib/gif_lib.h"
 
@@ -41,20 +43,76 @@ int16_t get_frame_delay(SavedImage frame) {
     return delay;
 }
 
-int main()
-{
-    char gif_filename[] = "test_3layers.gif";
+struct FakeHandle {
+    char* content;
+    uint16_t pos;
+};
+
+static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
+    struct FakeHandle* data = (struct FakeHandle*) ft->UserData;
+    printf("content_read_func reading from %d to %d\n", data->pos, data->pos+arg);
+    //data->content.substring(data->pos, data->pos+arg).getBytes(buf, arg);
+
+    // Serial.print(". Sending: '");
+    // Serial.write(buf, arg);
+    // Serial.println("'.");
+    memcpy(bt, data->content+data->pos, arg);
+    data->pos += arg;
+    return arg;
+}
+
+GifFileType* parseGif(char * content) {
     GifFileType *gif;
     int *gif_err = 0;
-    gif = DGifOpenFileName(gif_filename, gif_err);
+    struct FakeHandle handle;
+    handle.content = content;
+    handle.pos = 0;
+    //byte* data = (byte*)malloc(content.length());
+    //content.getBytes(data, content.length());
+    gif = DGifOpen(&handle, &content_read_func, gif_err);
+    if (gif == NULL || gif_err != 0) {
+       printf("Failure to parse GIF. Error: ");
+    //    printf(*gif_err);
+        if (gif != NULL) {
+            EGifCloseFile (gif, NULL);
+        }
+        return NULL; /* not a GIF */
+    }
+    // free(data);
+    // data = NULL;
     if(gif == NULL) {
-        printf("Can't read file '%s'. %d", gif_filename, *gif_err);
-        return 1;
+        printf("Can't reading file: %d", *gif_err);
+        return NULL;
     }
     if(DGifSlurp(gif) == GIF_ERROR) {
-        printf("problems parsing %s", gif_filename);
+        printf("problems parsing gif");
+        return NULL;
+    }
+    return gif;
+}
+
+char* read_file(char* file_name) {
+    FILE *ifp;
+    ifp = fopen(file_name, "rb");
+    fseek(ifp, 0, SEEK_END);
+    long length = ftell(ifp);
+    fseek(ifp, 0, SEEK_SET);
+    char *bytes = (char*) malloc(length);
+    fread(bytes, length, 1, ifp);
+    fclose(ifp);
+    return bytes;
+}
+
+int main()
+{
+    char gif_filename[] = "test_2layers.gif";
+    GifFileType *gif;
+    gif = parseGif(read_file(gif_filename));
+    if(gif == NULL) {
+        printf("FAILED.");
         return 1;
     }
+    //gif = DGifOpenFileName(gif_filename, gif_err);
     GifWord width = gif->SWidth;
     GifWord height = gif->SHeight;
     if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
