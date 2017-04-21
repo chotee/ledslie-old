@@ -137,10 +137,10 @@ struct FakeHandle {
 
 static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
     struct FakeHandle* data = (struct FakeHandle*) ft->UserData;
-    Serial.print("content_read_func reading from ");
-    Serial.print(data->pos);
-    Serial.print(" to ");
-    Serial.print(data->pos+arg);
+    // Serial.print("content_read_func reading from ");
+    // Serial.print(data->pos);
+    // Serial.print(" to ");
+    // Serial.print(data->pos+arg);
     byte buf[arg];
     data->content.substring(data->pos, data->pos+arg).getBytes(buf, arg);
     Serial.print(". Sending: '");
@@ -172,6 +172,14 @@ GifFileType* parseGif(String content) {
     }
     // free(data);
     // data = NULL;
+    if(gif == NULL) {
+        Serial.println("Can't read file: %d", *gif_err);
+        return NULL;
+    }
+    if(DGifSlurp(gif) == GIF_ERROR) {
+        Serial.println("problems parsing gif");
+        return NULL;
+    }
     return gif;
 }
 

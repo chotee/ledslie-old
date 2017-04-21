@@ -81,7 +81,7 @@ GifFileType* parseGif(char * content) {
     // free(data);
     // data = NULL;
     if(gif == NULL) {
-        printf("Can't reading file: %d", *gif_err);
+        printf("Can't read file: %d", *gif_err);
         return NULL;
     }
     if(DGifSlurp(gif) == GIF_ERROR) {
