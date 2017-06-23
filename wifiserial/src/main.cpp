@@ -29,7 +29,7 @@ void setup()
 
     WiFi.begin(ssid, password);
 
-    uint16_t nr = 0;
+    uint16_t nr = 1;
     while (WiFi.status() != WL_CONNECTED) {
         delay(500);
         Serial.print(".");
@@ -158,6 +158,19 @@ void printRequestResults(struct request_struct *request) {
     Serial.print(request->contentLength);
     Serial.print(" bytes of ");
     Serial.println(request->contentType);
+    for(int i=0; i<request->contentLength; i++) {
+        Serial.print(int(request->content.charAt(i)));
+        Serial.print(" ");
+        if(i > 0){
+            if(i % 16 == 0) {
+                Serial.println();
+            }
+            else if(i % 8 == 0) {
+                Serial.print(" ");
+            }
+        }
+    }
+    Serial.println("----");
 }
 
 struct FakeHandle {
