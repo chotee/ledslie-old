@@ -51,6 +51,7 @@ void setup()
 struct request_struct {
     String verb;
     String path;
+    bool expect_header;
     String content;
     String contentType;
     uint16_t contentLength;
@@ -73,7 +74,7 @@ void displayPage(WiFiClient client, String message) {
 }
 
 void announceClient(WiFiClient client) {
-    Serial.print("new client from ");        // print a message out the serial port
+    Serial.print("New client from ");        // print a message out the serial port
     Serial.print(client.remoteIP());
     Serial.print(":");
     Serial.println(client.remotePort());
@@ -83,9 +84,10 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
     Serial.println("HEADER");
     String currentLine = "";           // make a String to hold incoming data from the client
     request->contentLength = 0;
+    request->expect_header = false;
     int lineNr = 0;
-    Serial.print("handleHeader Connected: ");
-    Serial.println(client.connected());
+    // Serial.print("handleHeader Connected: ");
+    // Serial.println(client.connected());
     while (client.connected()) {            // loop while the client's connected
         if (client.available()) {             // if there's bytes to read from the client,
             char c = client.read();             // read a byte, then
@@ -101,12 +103,12 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
                     if(headerName == "Content-Length") {
                         request->contentLength = headerValue.toInt();
                     }
-                    if(headerName == "Content-Type") {
+                    else if(headerName == "Content-Type") {
                         request->contentType = headerValue;
                     }
-                    // if(headerName == "Expect" {
-                    //     request->expect = true;
-                    // }
+                    else if(headerName == "Expect") {
+                        request->expect_header = true;
+                    }
                 } else if (lineNr == 0) {
                     uint16_t verb_space = currentLine.indexOf(' ');
                     request->verb = currentLine.substring(0, verb_space);
@@ -123,14 +125,11 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
 }
 
 void handleBody(WiFiClient client, struct request_struct *request) {
-    Serial.println("BODY");
+    // Serial.println("BODY");
     uint16_t nr = 1;
     uint16_t data_bytes = request->contentLength;
-    // client.println("HTTP/1.1 100 Continue");
-    // client.println();
-
-    Serial.print("contentLength data_bytes=");
-    Serial.println(data_bytes);
+    // Serial.print("contentLength data_bytes=");
+    // Serial.println(data_bytes);
     while (client.connected() && data_bytes-- > 0) {            // loop while the client's connected
         // Serial.print("c");
         if (client.available()) {             // if there's bytes to read from the client,
@@ -140,22 +139,37 @@ void handleBody(WiFiClient client, struct request_struct *request) {
             nr++;
         }
     }
-    Serial.print("Done after bytes=");
-    Serial.print(nr);
-    Serial.print("  Bytes stored=");
+    Serial.print("Stored bytes: ");
     Serial.println(request->content.length());
 }
 
-void dumpString(String content) {
-    for(int i=0; i<content.length(); i++) {
-        Serial.print(int(content.charAt(i)));
+void handleContinue(WiFiClient client, struct request_struct *request) {
+    if(request->expect_header == true) {
+        client.println("HTTP/1.1 100 Continue");
+        client.println();
+        Serial.println("Send Continue response.");
+    }
+}
+
+void printRequestResults(struct request_struct *request) {
+    Serial.println("-------------");
+    Serial.println(request->verb);
+    Serial.println(request->path);
+    // Serial.print("Content '");
+    // Serial.print(request->content);
+    // Serial.println("'.");
+    Serial.print(request->contentLength);
+    Serial.print(" bytes of ");
+    Serial.println(request->contentType);
+    for(uint16_t i=0; i<request->content.length(); i++) {
+        if(i % 16 == 0) {
+            Serial.printf("\n%04x |", i);
+        }
+        Serial.printf("%02x", int(request->content.charAt(i)));
         Serial.print(" ");
         if(i > 0){
-            if(i % 16 == 0) {
-                Serial.println();
-            }
-            else if(i % 8 == 0) {
-                Serial.print(" | ");
+            if(i % 8 == 0 && i % 16 != 0) {
+                Serial.print(" || ");
             }
         }
     }
@@ -163,62 +177,35 @@ void dumpString(String content) {
     Serial.println("----");
 }
 
-void printRequestResults(struct request_struct *request) {
-    Serial.println("-------------");
-    Serial.println(request->verb);
-    Serial.println(request->path);
-    Serial.print("Content '");
-    Serial.print(request->content);
-    Serial.println("'.");
-    Serial.print(request->contentLength);
-    Serial.print(" bytes of ");
-    Serial.println(request->contentType);
-    // for(int i=0; i<request->content.length(); i++) {
-    //     Serial.print(int(request->content.charAt(i)));
-    //     Serial.print(" ");
-    //     if(i > 0){
-    //         if(i % 16 == 0) {
-    //             Serial.println();
-    //         }
-    //         else if(i % 8 == 0) {
-    //             Serial.print(" | ");
-    //         }
-    //     }
-    // }
-    // Serial.println();
-    // Serial.println("----");
-    // dumpString(request->content);
-}
-
 static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
     struct request_struct* request = (struct request_struct*) ft->UserData;
 
-    if(request->pos == 0) {
-        Serial.print("length=");
-        Serial.print(request->content.length());
-        Serial.println();
-        // dumpString(request->content);
-    }
-    for(int i=0; i<arg; i++) {
-        Serial.print(int(request->content.charAt(request->pos+i)));
-        Serial.print(" ");
-    }
+    // if(request->pos == 0) {
+    //     Serial.print("length=");
+    //     Serial.print(request->content.length());
+    //     Serial.println();
+    //     // dumpString(request->content);
+    // }
+    // for(int i=0; i<arg; i++) {
+    //     Serial.print(int(request->content.charAt(request->pos+i)));
+    //     Serial.print(" ");
+    // }
     const char* buf = request->content.c_str() + request->pos;
-    Serial.print("buf=");
-    Serial.print((unsigned int) buf);
-    Serial.print(" pos=");
-    Serial.print(request->pos);
-    Serial.print(" req=");
-    Serial.print(arg);
-    Serial.print(" . Sending: '");
+    // Serial.print("buf=");
+    // Serial.print((unsigned int) buf);
+    // Serial.print(" pos=");
+    // Serial.print(request->pos);
+    // Serial.print(" req=");
+    // Serial.print(arg);
+    // Serial.print(" . Sending: '");
     memcpy(bt, buf, arg);
-    Serial.write(bt, arg);
-    Serial.print("' -- ");
-    for(int i=0; i<arg; i++) {
-        Serial.print(int(*(bt+i)));
-        Serial.print(" ");
-    }
-    Serial.println();
+    // Serial.write(bt, arg);
+    // Serial.print("' -- ");
+    // for(int i=0; i<arg; i++) {
+    //     Serial.print(int(*(bt+i)));
+    //     Serial.print(" ");
+    // }
+    // Serial.println();
 
     memcpy(bt, buf, arg);
     request->pos += arg;
@@ -230,13 +217,11 @@ GifFileType* parseGif(struct request_struct *request) {
     GifFileType *gif;
     int gif_err = 0;
     request->pos = 0;
-    //byte* data = (byte*)malloc(content.length());
-    //content.getBytes(data, content.length());
     gif = DGifOpen(request, &content_read_func, &gif_err);
     if (gif == NULL || gif_err != 0)
     {
         Serial.print("Failure to parse GIF. Error");
-        Serial.println(gif_err);
+        Serial.println(GifErrorString(gif_err));
         // if (gif != NULL) {
         //     EGifCloseFile (gif, NULL);
         // }
@@ -249,7 +234,8 @@ GifFileType* parseGif(struct request_struct *request) {
         return NULL;
     }
     if(DGifSlurp(gif) == GIF_ERROR) {
-        Serial.println("Problems parsing gif.");
+        Serial.println("Problems parsing gif. ");
+        Serial.println(GifErrorString(gif->Error));
         return NULL;
     }
     return gif;
@@ -269,27 +255,13 @@ int16_t get_frame_delay(SavedImage frame) {
 void handleClient(WiFiClient client) {
     struct request_struct request;
     handleHeader(client, &request);
+    handleContinue(client, &request);
     handleBody(client, &request);
     printRequestResults(&request);
-    Serial.println("Post printRequestResults");
-    for(int i=0; i<request.content.length(); i++) {
-        Serial.print(int(request.content.charAt(i)));
-        Serial.print(" ");
-        if(i > 0){
-            if(i % 16 == 0) {
-                Serial.println();
-            }
-            else if(i % 8 == 0) {
-                Serial.print(" | ");
-            }
-        }
-    }
-    Serial.println();
-    Serial.println("----");
     if(request.verb == "GET") {
         displayPage(client, "OK");
     } else if(request.verb == "POST" && request.contentType == "image/gif") {
-        Serial.println("it was a POST");
+        // Serial.println("it was a POST");
         GifFileType *gif = parseGif(&request);
         if(gif == NULL) {
             return;
