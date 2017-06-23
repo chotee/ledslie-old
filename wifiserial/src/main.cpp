@@ -27,6 +27,7 @@ void setup()
     Serial.print("Connecting to ");
     Serial.println(ssid);
 
+    // WiFi.mode(WIFI_STA);
     WiFi.begin(ssid, password);
 
     uint16_t nr = 1;
@@ -252,6 +253,22 @@ int16_t get_frame_delay(SavedImage frame) {
     return delay;
 }
 
+void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
+    for(int j=0; j<(DISPLAY_WIDTH*DISPLAY_ROWS); j++) {
+        char b = 0;
+        unsigned char res = 0;
+        for(int i=0; i<8; i++) {
+//            int pos = j+(i*width);
+            b = RasterBits[j+(i*DISPLAY_WIDTH)];
+            res = res | (b << i);
+//            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
+        }
+        display_bytes[j] = res;
+        printf("%02x", display_bytes[j]);
+    }
+    printf("\n");
+}
+
 void handleClient(WiFiClient client) {
     struct request_struct request;
     handleHeader(client, &request);
@@ -287,8 +304,7 @@ void handleClient(WiFiClient client) {
             Serial.print(" shown for ");
             Serial.print(frame_delay);
             Serial.println("ms ------");
-//            image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
-
+            image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
         }
     }
 }
@@ -312,21 +328,6 @@ void loop() {
 // #define DISPLAY_WIDTH 3*6*8
 // #define DISPLAY_ROWS 3
 //
-// void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
-//     for(int j=0; j<(DISPLAY_WIDTH*DISPLAY_ROWS); j++) {
-//         char b = 0;
-//         unsigned char res = 0;
-//         for(int i=0; i<8; i++) {
-// //            int pos = j+(i*width);
-//             b = RasterBits[j+(i*DISPLAY_WIDTH)];
-//             res = res | (b << i);
-// //            printf("pos=%d; b=%d; res=%x\n", pos, b, res);
-//         }
-//         display_bytes[j] = res;
-//         printf("%02x", display_bytes[j]);
-//     }
-//     printf("\n");
-// }
 //
 // void print_bytes(uint8_t *display_bytes) {
 //     for(int k=0; k<(DISPLAY_WIDTH*DISPLAY_ROWS); k++) {
