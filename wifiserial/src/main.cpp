@@ -54,6 +54,7 @@ struct request_struct {
     String content;
     String contentType;
     uint16_t contentLength;
+    uint16_t pos;
 };
 
 void displayPage(WiFiClient client, String message) {
@@ -130,22 +131,36 @@ void handleBody(WiFiClient client, struct request_struct *request) {
 
     Serial.print("contentLength data_bytes=");
     Serial.println(data_bytes);
-    while (client.connected() && --data_bytes > 0) {            // loop while the client's connected
+    while (client.connected() && data_bytes-- > 0) {            // loop while the client's connected
         // Serial.print("c");
         if (client.available()) {             // if there's bytes to read from the client,
             // Serial.print("a");
             char c = client.read();             // read a byte, then
             request->content += c;
             nr++;
-            // if((nr % 10) == 0) {
-            //     Serial.print(nr);
-            //     Serial.print(": ");
-            //     Serial.println(c);
-            // }
         }
     }
     Serial.print("Done after bytes=");
-    Serial.println(nr);
+    Serial.print(nr);
+    Serial.print("  Bytes stored=");
+    Serial.println(request->content.length());
+}
+
+void dumpString(String content) {
+    for(int i=0; i<content.length(); i++) {
+        Serial.print(int(content.charAt(i)));
+        Serial.print(" ");
+        if(i > 0){
+            if(i % 16 == 0) {
+                Serial.println();
+            }
+            else if(i % 8 == 0) {
+                Serial.print(" | ");
+            }
+        }
+    }
+    Serial.println();
+    Serial.println("----");
 }
 
 void printRequestResults(struct request_struct *request) {
@@ -158,44 +173,41 @@ void printRequestResults(struct request_struct *request) {
     Serial.print(request->contentLength);
     Serial.print(" bytes of ");
     Serial.println(request->contentType);
-    for(int i=0; i<request->contentLength; i++) {
-        Serial.print(int(request->content.charAt(i)));
-        Serial.print(" ");
-        if(i > 0){
-            if(i % 16 == 0) {
-                Serial.println();
-            }
-            else if(i % 8 == 0) {
-                Serial.print(" ");
-            }
-        }
-    }
-    Serial.println("----");
+    // for(int i=0; i<request->content.length(); i++) {
+    //     Serial.print(int(request->content.charAt(i)));
+    //     Serial.print(" ");
+    //     if(i > 0){
+    //         if(i % 16 == 0) {
+    //             Serial.println();
+    //         }
+    //         else if(i % 8 == 0) {
+    //             Serial.print(" | ");
+    //         }
+    //     }
+    // }
+    // Serial.println();
+    // Serial.println("----");
+    // dumpString(request->content);
 }
 
-struct FakeHandle {
-    String content;
-    uint16_t pos;
-};
-
 static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
-    struct FakeHandle* data = (struct FakeHandle*) ft->UserData;
-    // Serial.print("content_read_func reading from ");
-    // Serial.print(data->pos);
-    // Serial.print(" to ");
-    // Serial.print(data->pos+arg);
-    // byte buf[arg];
-    // data->content.substring(data->pos, data->pos+arg+1).getBytes(buf, arg);
+    struct request_struct* request = (struct request_struct*) ft->UserData;
 
+    if(request->pos == 0) {
+        Serial.print("length=");
+        Serial.print(request->content.length());
+        Serial.println();
+        // dumpString(request->content);
+    }
     for(int i=0; i<arg; i++) {
-        Serial.print(int(data->content.charAt(data->pos+i)));
+        Serial.print(int(request->content.charAt(request->pos+i)));
         Serial.print(" ");
     }
-    const char* buf = data->content.c_str() + data->pos;
+    const char* buf = request->content.c_str() + request->pos;
     Serial.print("buf=");
     Serial.print((unsigned int) buf);
     Serial.print(" pos=");
-    Serial.print(data->pos);
+    Serial.print(request->pos);
     Serial.print(" req=");
     Serial.print(arg);
     Serial.print(" . Sending: '");
@@ -209,23 +221,22 @@ static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
     Serial.println();
 
     memcpy(bt, buf, arg);
-    data->pos += arg;
+    request->pos += arg;
     return arg;
 }
 
-GifFileType* parseGif(String content) {
+GifFileType* parseGif(struct request_struct *request) {
+    Serial.println("parseGif");
     GifFileType *gif;
-    int *gif_err = 0;
-    struct FakeHandle handle;
-    handle.content = content;
-    handle.pos = 0;
+    int gif_err = 0;
+    request->pos = 0;
     //byte* data = (byte*)malloc(content.length());
     //content.getBytes(data, content.length());
-    DGifOpen(&handle, &content_read_func, gif_err);
+    gif = DGifOpen(request, &content_read_func, &gif_err);
     if (gif == NULL || gif_err != 0)
     {
-        Serial.println("Failure to parse GIF. Error");
-        // Serial.println(*gif_err);
+        Serial.print("Failure to parse GIF. Error");
+        Serial.println(gif_err);
         // if (gif != NULL) {
         //     EGifCloseFile (gif, NULL);
         // }
@@ -260,10 +271,26 @@ void handleClient(WiFiClient client) {
     handleHeader(client, &request);
     handleBody(client, &request);
     printRequestResults(&request);
+    Serial.println("Post printRequestResults");
+    for(int i=0; i<request.content.length(); i++) {
+        Serial.print(int(request.content.charAt(i)));
+        Serial.print(" ");
+        if(i > 0){
+            if(i % 16 == 0) {
+                Serial.println();
+            }
+            else if(i % 8 == 0) {
+                Serial.print(" | ");
+            }
+        }
+    }
+    Serial.println();
+    Serial.println("----");
     if(request.verb == "GET") {
         displayPage(client, "OK");
     } else if(request.verb == "POST" && request.contentType == "image/gif") {
-        GifFileType *gif = parseGif(request.content);
+        Serial.println("it was a POST");
+        GifFileType *gif = parseGif(&request);
         if(gif == NULL) {
             return;
         }
@@ -273,6 +300,11 @@ void handleClient(WiFiClient client) {
             Serial.println("Frame is wrong size");// %dx%d should be (%dx%d)\n",
                    //width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
             return;
+        } else {
+            Serial.print("Frame is ");
+            Serial.print(width);
+            Serial.print("x");
+            Serial.println(height);
         }
         uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
         for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
