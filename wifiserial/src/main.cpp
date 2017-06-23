@@ -68,6 +68,7 @@ void displayPage(WiFiClient client, String message) {
     // the content of the HTTP response follows the header:
     client.print("<!DOCTYPE html><html><body>");
     client.print(message);
+    Serial.println(message);
     client.print("</body></html>");
 
     // The HTTP response ends with another blank line:
@@ -180,40 +181,13 @@ void printRequestResults(struct request_struct *request) {
 
 static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
     struct request_struct* request = (struct request_struct*) ft->UserData;
-
-    // if(request->pos == 0) {
-    //     Serial.print("length=");
-    //     Serial.print(request->content.length());
-    //     Serial.println();
-    //     // dumpString(request->content);
-    // }
-    // for(int i=0; i<arg; i++) {
-    //     Serial.print(int(request->content.charAt(request->pos+i)));
-    //     Serial.print(" ");
-    // }
     const char* buf = request->content.c_str() + request->pos;
-    // Serial.print("buf=");
-    // Serial.print((unsigned int) buf);
-    // Serial.print(" pos=");
-    // Serial.print(request->pos);
-    // Serial.print(" req=");
-    // Serial.print(arg);
-    // Serial.print(" . Sending: '");
-    memcpy(bt, buf, arg);
-    // Serial.write(bt, arg);
-    // Serial.print("' -- ");
-    // for(int i=0; i<arg; i++) {
-    //     Serial.print(int(*(bt+i)));
-    //     Serial.print(" ");
-    // }
-    // Serial.println();
-
     memcpy(bt, buf, arg);
     request->pos += arg;
     return arg;
 }
 
-GifFileType* parseGif(struct request_struct *request) {
+GifFileType* parseGifHeader(struct request_struct *request) {
     Serial.println("parseGif");
     GifFileType *gif;
     int gif_err = 0;
@@ -223,20 +197,11 @@ GifFileType* parseGif(struct request_struct *request) {
     {
         Serial.print("Failure to parse GIF. Error");
         Serial.println(GifErrorString(gif_err));
-        // if (gif != NULL) {
-        //     EGifCloseFile (gif, NULL);
-        // }
+
         return NULL; /* not a GIF */
     }
-    // free(data);
-    // data = NULL;
     if(gif == NULL) {
         Serial.println("Can't read file.");
-        return NULL;
-    }
-    if(DGifSlurp(gif) == GIF_ERROR) {
-        Serial.println("Problems parsing gif. ");
-        Serial.println(GifErrorString(gif->Error));
         return NULL;
     }
     return gif;
@@ -269,53 +234,84 @@ void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
     printf("\n");
 }
 
-void handleClient(WiFiClient client) {
-    struct request_struct request;
-    handleHeader(client, &request);
-    handleContinue(client, &request);
-    handleBody(client, &request);
-    printRequestResults(&request);
-    if(request.verb == "GET") {
+void handleRequest(WiFiClient client, struct request_struct* request) {
+    handleHeader(client, request);
+    handleContinue(client, request);
+    handleBody(client, request);
+    printRequestResults(request);
+}
+
+GifFileType * formulateResponse(WiFiClient client, struct request_struct* request) {
+    char msg[80];
+    int gif_err = 0;
+    if(request->verb == "GET") {
         displayPage(client, "OK");
-    } else if(request.verb == "POST" && request.contentType == "image/gif") {
+    } else if(request->verb == "POST" && request->contentType == "image/gif") {
         // Serial.println("it was a POST");
-        GifFileType *gif = parseGif(&request);
+        GifFileType *gif = parseGifHeader(request);
         if(gif == NULL) {
-            return;
+            return NULL;
         }
         GifWord width = gif->SWidth;
         GifWord height = gif->SHeight;
+        GifWord colors = gif->SColorResolution;
         if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
-            Serial.println("Frame is wrong size");// %dx%d should be (%dx%d)\n",
-                   //width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
-            return;
+            snprintf(msg, 80, "Frame is wrong size %dx%d. it should be (%dx%d)", width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+            displayPage(client, msg);
+            return NULL;
+        } else if(colors != 1) {
+            snprintf(msg, 80, "Number of colors %d is unsupported. Should be 1", colors);
+            displayPage(client, msg);
+            return NULL;
         } else {
-            Serial.print("Frame is ");
-            Serial.print(width);
-            Serial.print("x");
-            Serial.println(height);
+            snprintf(msg, 80, "Color depth: %d. Size is %dx%d.", colors, width, height);
+            displayPage(client, msg);
         }
-        uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
-        for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
-            SavedImage frame = gif->SavedImages[frameNr];
-            int16_t frame_delay = get_frame_delay(frame);
-            Serial.print("------ Frame ");
-            Serial.print(frameNr);
-            Serial.print(" shown for ");
-            Serial.print(frame_delay);
-            Serial.println("ms ------");
-            image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
+        if(DGifSlurp(gif) == GIF_ERROR) {
+            snprintf(msg, 80, "Problems parsing gif. %s", GifErrorString(gif->Error));
+            displayPage(client, msg);
+            return NULL;
+        } else {
+            return gif;
         }
+    }
+    return NULL;
+}
+
+void sendImage(GifFileType *gif) {
+    uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
+    for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
+        SavedImage frame = gif->SavedImages[frameNr];
+        int16_t frame_delay = get_frame_delay(frame);
+        Serial.print("------ Frame ");
+        Serial.print(frameNr);
+        Serial.print(" shown for ");
+        Serial.print(frame_delay);
+        Serial.println("ms ------");
+        image_bytes(display_bytes, gif->SavedImages[frameNr].RasterBits);
     }
 }
 
 void loop() {
     WiFiClient client = server.available();   // listen for incoming clients
+    GifFileType *gif = NULL;
+    int gif_err = 0;
+    struct request_struct request;
     if (client) {
+        request.content = "";
+        request.pos = 0;
+        request.contentLength = 0;
+        if(gif != NULL) { // start clean.
+            gif = NULL;
+        }
         announceClient(client);
-        handleClient(client);
+        handleRequest(client, &request);
+        gif = formulateResponse(client, &request);
         client.stop();
         Serial.println("client disonnected");
+    }
+    if(gif != NULL) {
+        sendImage(gif);
     }
 };
 
