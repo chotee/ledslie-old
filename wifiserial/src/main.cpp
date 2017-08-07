@@ -1,5 +1,4 @@
 #include "Arduino.h"
-#include <inttypes.h>
 #include <WiFi.h>
 #include "secret.h"
 #include "../lib/giflib/gif_lib.h"
@@ -7,15 +6,24 @@
 const char* ssid     = SSID_NAME;
 const char* password = SSID_PASS;
 
-#define DISPLAY_WIDTH 3*6*8
+#define DISPLAY_WIDTH (3*6*8)
 #define DISPLAY_ROWS 3
 #define SERIAL_DEBUG_BAUD 115200
 
+#define LED1_SERIAL_BAUD 115200
+#define LED1_SERIAL_TX 17
+#define LED1_SERIAL_RX 16
+
 WiFiServer server(80);
 
+HardwareSerial Serial1(1);
+
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 void setup()
 {
     Serial.begin(SERIAL_DEBUG_BAUD);
+    Serial1.begin(LED1_SERIAL_BAUD, SERIAL_8N1, 16, 17);
     pinMode(5, OUTPUT);      // set the LED pin mode
 
     delay(10);
@@ -48,15 +56,16 @@ void setup()
     server.begin();
     Serial.println("READY");
 }
+#pragma clang diagnostic pop
 
 struct request_struct {
     String verb;
     String path;
-    bool expect_header;
+    bool expect_header = false;
     String content;
     String contentType;
-    uint16_t contentLength;
-    uint16_t pos;
+    long contentLength = 0;
+    long pos = 0;
 };
 
 void displayPage(WiFiClient client, String message) {
@@ -90,15 +99,15 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
     int lineNr = 0;
     // Serial.print("handleHeader Connected: ");
     // Serial.println(client.connected());
-    while (client.connected()) {            // loop while the client's connected
-        if (client.available()) {             // if there's bytes to read from the client,
-            char c = client.read();             // read a byte, then
+    while ((boolean)client.connected()) {            // loop while the client's connected
+        if (client.available() > 0) {             // if there's bytes to read from the client,
+            char c = (char) client.read();             // read a byte, then
             Serial.write(c);
             if(c == '\n') {
                 if(currentLine.length() == 0) {
                     return;
                 }
-                int headerMark = currentLine.indexOf(':');
+                unsigned int headerMark = currentLine.indexOf(':');
                 if (headerMark != -1) {
                     String headerName  = currentLine.substring(0, headerMark);
                     String headerValue = currentLine.substring(headerMark+2);
@@ -235,46 +244,53 @@ void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
 }
 
 void handleRequest(WiFiClient client, struct request_struct* request) {
-    handleHeader(client, request);
-    handleContinue(client, request);
-    handleBody(client, request);
-    printRequestResults(request);
+    handleHeader(client, request); // Pull information from the HTTP header, store in the request object.
+    handleContinue(client, request); // If it expects it, send a 100-Continue message to the sender.
+    handleBody(client, request); // Handle the body, loading it into the request object.
+    printRequestResults(request); // Print information on the request.
 }
 
 GifFileType * formulateResponse(WiFiClient client, struct request_struct* request) {
-    char msg[80];
-    int gif_err = 0;
+    const uint8_t err_msg_length = 80;
+    char msg[err_msg_length]; // Location to put the message.
+    int gif_process_res = 0;
     if(request->verb == "GET") {
         displayPage(client, "OK");
     } else if(request->verb == "POST" && request->contentType == "image/gif") {
         // Serial.println("it was a POST");
-        GifFileType *gif = parseGifHeader(request);
+        GifFileType *gif = parseGifHeader(request); // process the header of the gif.
         if(gif == NULL) {
-            return NULL;
+            return NULL; // Something went wrong processing the header. Not a GIF?
         }
         GifWord width = gif->SWidth;
         GifWord height = gif->SHeight;
         GifWord colors = gif->SColorResolution;
+        // Determine if the GIF is correct for our application.
         if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
-            snprintf(msg, 80, "Frame is wrong size %dx%d. it should be (%dx%d)", width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+            // Image as the wrong size
+            snprintf(msg, err_msg_length, "Frame is wrong size %dx%d. it should be (%dx%d)", width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
             displayPage(client, msg);
             return NULL;
         } else if(colors != 1) {
-            snprintf(msg, 80, "Number of colors %d is unsupported. Should be 1", colors);
+            // Image is not mono-chrome.
+            snprintf(msg, err_msg_length, "Number of colors %d is unsupported. Should be 1", colors);
             displayPage(client, msg);
             return NULL;
         } else {
-            snprintf(msg, 80, "Color depth: %d. Size is %dx%d.", colors, width, height);
+            // Image header seems to match expectations. Return info for debugging.
+            snprintf(msg, err_msg_length, "Color depth: %d. Size is %dx%d.", colors, width, height);
             displayPage(client, msg);
         }
-        if(DGifSlurp(gif) == GIF_ERROR) {
-            snprintf(msg, 80, "Problems parsing gif. %s", GifErrorString(gif->Error));
+        gif_process_res = DGifSlurp(gif); // Process the image's data.
+        if(gif_process_res == GIF_ERROR) {
+            snprintf(msg, err_msg_length, "Problems parsing gif. %s", GifErrorString(gif->Error));
             displayPage(client, msg);
             return NULL;
-        } else {
-            return gif;
         }
+        return gif;
     }
+    snprintf(msg, err_msg_length, "%s request was not correct.", request->verb);
+    displayPage(client, msg);
     return NULL;
 }
 
@@ -292,25 +308,35 @@ void sendImage(GifFileType *gif) {
     }
 }
 
+#pragma clang diagnostic push
+#pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 void loop() {
     WiFiClient client = server.available();   // listen for incoming clients
     GifFileType *gif = NULL;
     int gif_err = 0;
+    char msg[80];
     struct request_struct request;
     if (client) {
-        request.content = "";
+        request.content.remove(0); // Resetting it to empty.
         request.pos = 0;
         request.contentLength = 0;
         if(gif != NULL) { // start clean.
             gif = NULL;
         }
-        announceClient(client);
-        handleRequest(client, &request);
-        gif = formulateResponse(client, &request);
-        client.stop();
+        announceClient(client); // just for debugging. Report on the client connecting
+        handleRequest(client, &request); // Get all of the request information out of the request
+        gif = formulateResponse(client, &request); // process the send data, returning the gif object processed.
+        client.stop(); // Close the connection
         Serial.println("client disonnected");
     }
     if(gif != NULL) {
         sendImage(gif);
+        if(DGifCloseFile(gif, &gif_err) == GIF_ERROR) {
+
+            snprintf(msg, 80, "Problems freeing gif. %s", GifErrorString(gif_err));
+            displayPage(client, msg);
+        }
     }
+    gif = NULL;
 };
+#pragma clang diagnostic pop
