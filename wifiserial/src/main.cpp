@@ -11,8 +11,8 @@ const char* password = SSID_PASS;
 #define SERIAL_DEBUG_BAUD 115200
 
 #define LED1_SERIAL_BAUD 115200
-#define LED1_SERIAL_TX 17
-#define LED1_SERIAL_RX 16
+//#define LED1_SERIAL_TX 17
+//#define LED1_SERIAL_RX 16
 
 WiFiServer server(80);
 
@@ -68,7 +68,11 @@ struct request_struct {
     long pos = 0;
 };
 
-void displayPage(WiFiClient client, String message) {
+void parse_start_line(request_struct *request, const String &currentLine);
+
+void parse_header_line(request_struct *request, const String &currentLine);
+
+void displayPage(WiFiClient client, const String message) {
     client.println("HTTP/1.1 200 OK");
     client.println("Connection: close");
     client.println("Content-type: text/html; charset=utf-8");
@@ -100,31 +104,17 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
     // Serial.print("handleHeader Connected: ");
     // Serial.println(client.connected());
     while ((boolean)client.connected()) {            // loop while the client's connected
-        if (client.available() > 0) {             // if there's bytes to read from the client,
-            char c = (char) client.read();             // read a byte, then
+        if (client.available() > 0) {                // if there's bytes to read from the client,
+            char c = (char) client.read();           // read a byte, then
             Serial.write(c);
-            if(c == '\n') {
+            if(c == '\n') { // This line is now done. See what it contains.
                 if(currentLine.length() == 0) {
-                    return;
+                    return; // Double newline. End of the headers section of the request.
                 }
-                unsigned int headerMark = currentLine.indexOf(':');
-                if (headerMark != -1) {
-                    String headerName  = currentLine.substring(0, headerMark);
-                    String headerValue = currentLine.substring(headerMark+2);
-                    if(headerName == "Content-Length") {
-                        request->contentLength = headerValue.toInt();
-                    }
-                    else if(headerName == "Content-Type") {
-                        request->contentType = headerValue;
-                    }
-                    else if(headerName == "Expect") {
-                        request->expect_header = true;
-                    }
-                } else if (lineNr == 0) {
-                    uint16_t verb_space = currentLine.indexOf(' ');
-                    request->verb = currentLine.substring(0, verb_space);
-                    uint16_t path_space = currentLine.indexOf(' ', verb_space+1);
-                    request->path  = currentLine.substring(verb_space+1, path_space);
+                if (lineNr == 0) { // This is the first line, not a header. Treat it differently.
+                    parse_start_line(request, currentLine);
+                } else {
+                    parse_header_line(request, currentLine);
                 }
                 lineNr++;
                 currentLine = "";
@@ -133,6 +123,28 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
             }
         }
     }
+}
+
+void parse_header_line(request_struct *request, const String &currentLine) {
+    unsigned int headerMark = currentLine.indexOf(':');
+    if (headerMark != -1) { // If we can't find the color, we're skipping this line.
+        String headerName = currentLine.substring(0, headerMark);
+        String headerValue = currentLine.substring(headerMark + 2);
+        if (headerName == "Content-Length") {
+            request->contentLength = headerValue.toInt();
+        } else if (headerName == "Content-Type") {
+            request->contentType = headerValue;
+        } else if (headerName == "Expect") {
+            request->expect_header = true;
+        }
+    }
+}
+
+void parse_start_line(request_struct *request, const String &currentLine) {
+    int verb_space = currentLine.indexOf(' ');
+    request->verb = currentLine.substring(0, verb_space);
+    int path_space = currentLine.indexOf(' ', verb_space+1);
+    request->path  = currentLine.substring(verb_space+1, path_space);
 }
 
 void handleBody(WiFiClient client, struct request_struct *request) {
@@ -339,4 +351,5 @@ void loop() {
     }
     gif = NULL;
 };
+
 #pragma clang diagnostic pop
