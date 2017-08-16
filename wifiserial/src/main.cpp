@@ -1,7 +1,8 @@
 #include "Arduino.h"
 #include <WiFi.h>
-#include "secret.h"
 #include "../lib/giflib/gif_lib.h"
+#include "secret.h"
+#include "pages.h"
 
 const char* ssid     = SSID_NAME;
 const char* password = SSID_PASS;
@@ -14,9 +15,14 @@ const char* password = SSID_PASS;
 //#define LED1_SERIAL_TX 17
 //#define LED1_SERIAL_RX 16
 
-WiFiServer server(80);
+#define ERROR_MSG_LENGTH 80
 
+WiFiServer server(80);
 HardwareSerial Serial1(1);
+
+constexpr unsigned int str2int(const char *str, int h = 0) {
+    return !str[h] ? 5381 : (str2int(str, h+1) * 33) ^ str[h];
+}
 
 #pragma clang diagnostic push
 #pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
@@ -59,36 +65,33 @@ void setup()
 #pragma clang diagnostic pop
 
 struct request_struct {
-    String verb;
-    String path;
-    bool expect_header = false;
-    String content;
-    String contentType;
-    long contentLength = 0;
-    long pos = 0;
+    String verb; // Verb of the request, POST, GET, etc.
+    String path; // Path of the request
+    bool expect_header = false; // True if the caller expects a 100 continue.
+    String contentType; // mime-type of the content.
+    uint16_t contentLength = 0; // Number of bytes of the content as reported by the client.
+
+    // Used for the loading of the gif
+    WiFiClient *client = nullptr; // The client object.
+    uint16_t pos = 0; // Location where the client is reading the file
+    char err_msg[ERROR_MSG_LENGTH] = "";
+};
+
+struct image_queue_struct {
+    uint32_t curr_frame_start = 0;
+    GifFileType *gif = nullptr;
+
 };
 
 void parse_start_line(request_struct *request, const String &currentLine);
 
 void parse_header_line(request_struct *request, const String &currentLine);
 
-void displayPage(WiFiClient client, const String message) {
-    client.println("HTTP/1.1 200 OK");
-    client.println("Connection: close");
-    client.println("Content-type: text/html; charset=utf-8");
-    client.println();
+Request_t decideRequestType(request_struct *request);
 
-    // the content of the HTTP response follows the header:
-    client.print("<!DOCTYPE html><html><body>");
-    client.print(message);
-    Serial.println(message);
-    client.print("</body></html>");
+char * verify_image_header(struct request_struct *request, GifFileType *gif) ;
 
-    // The HTTP response ends with another blank line:
-    client.println();
-}
-
-void announceClient(WiFiClient client) {
+void announceClient(WiFiClient &client) {
     Serial.print("New client from ");        // print a message out the serial port
     Serial.print(client.remoteIP());
     Serial.print(":");
@@ -105,7 +108,7 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
     // Serial.println(client.connected());
     while ((boolean)client.connected()) {            // loop while the client's connected
         if (client.available() > 0) {                // if there's bytes to read from the client,
-            char c = (char) client.read();           // read a byte, then
+            auto char c = (char) client.read();           // read a byte, then
             Serial.write(c);
             if(c == '\n') { // This line is now done. See what it contains.
                 if(currentLine.length() == 0) {
@@ -147,27 +150,64 @@ void parse_start_line(request_struct *request, const String &currentLine) {
     request->path  = currentLine.substring(verb_space+1, path_space);
 }
 
-void handleBody(WiFiClient client, struct request_struct *request) {
-    // Serial.println("BODY");
-    uint16_t nr = 1;
-    uint16_t data_bytes = request->contentLength;
-    // Serial.print("contentLength data_bytes=");
-    // Serial.println(data_bytes);
-    while (client.connected() && data_bytes-- > 0) {            // loop while the client's connected
-        // Serial.print("c");
-        if (client.available()) {             // if there's bytes to read from the client,
-            // Serial.print("a");
-            char c = client.read();             // read a byte, then
-            request->content += c;
-            nr++;
+static int content_read_func(GifFileType *ft, // Structure.
+                             GifByteType *bt, // Buffer to write bytes to.
+                             int arg // Expected number of bytes to return.
+) {
+    struct request_struct* request = (struct request_struct*) ft->UserData;
+    WiFiClient *client = request->client;
+    int i = 0;
+    while (client->connected() != 0u // loop while the client's connected
+           && arg > i ) {           // and number of bytes requested in the call is not yet complete
+        if (client->available() != 0) {                   // if there's bytes to read from the client,
+            *(bt+i) = (GifByteType) client->read();       // read a byte, store in the bt buffer.
+            i++;
         }
     }
-    Serial.print("Stored bytes: ");
-    Serial.println(request->content.length());
+    request->pos += i;
+    return i;
+}
+
+GifFileType * handleImageUpload(WiFiClient client, struct request_struct *request) {
+    GifFileType *gif = nullptr;
+    int gif_err = 0;
+    request->client = &client;
+    request->pos = 0;
+    gif = DGifOpen(request, &content_read_func, &gif_err);
+    if(gif == nullptr) {
+        strncpy(request->err_msg, "Not a valid gif.", ERROR_MSG_LENGTH);
+        return nullptr; // Something went wrong processing the header. Not a GIF?
+    }
+    char * err_msg = verify_image_header(request, gif);
+    if(err_msg) {
+        return nullptr;
+    }
+    int gif_process_res = DGifSlurp(gif); // Process the image's data.
+    if(gif_process_res == GIF_ERROR) {
+        snprintf(request->err_msg, ERROR_MSG_LENGTH, "Problems parsing gif. %s", GifErrorString(gif->Error));
+        return nullptr;
+    }
+    return gif;
+
+}
+
+char * verify_image_header(struct request_struct *request, GifFileType *gif) {
+    strncpy(request->err_msg, "", ERROR_MSG_LENGTH); // Cleaning out the error message.
+    // Determine if the GIF is correct for our application.
+    if( (DISPLAY_WIDTH != gif->SWidth) || (DISPLAY_ROWS*8 != gif->SHeight) ) {
+        // Image as the wrong size
+        snprintf(request->err_msg, ERROR_MSG_LENGTH, "Frame is wrong size %dx%d. it should be (%dx%d)",
+                 gif->SWidth, gif->SHeight, DISPLAY_WIDTH, DISPLAY_ROWS * 8);
+    }
+    else if(gif->SColorResolution != 1) {
+        // Image is not mono-chrome.
+        snprintf(request->err_msg, ERROR_MSG_LENGTH,
+                 "Number of colors %d is unsupported. Should be 1", gif->SColorResolution);
+    }
 }
 
 void handleContinue(WiFiClient client, struct request_struct *request) {
-    if(request->expect_header == true) {
+    if(request->expect_header) {
         client.println("HTTP/1.1 100 Continue");
         client.println();
         Serial.println("Send Continue response.");
@@ -177,6 +217,7 @@ void handleContinue(WiFiClient client, struct request_struct *request) {
 void printRequestResults(struct request_struct *request) {
     Serial.println("-------------");
     Serial.println(request->verb);
+    Serial.print(" ");
     Serial.println(request->path);
     // Serial.print("Content '");
     // Serial.print(request->content);
@@ -184,49 +225,41 @@ void printRequestResults(struct request_struct *request) {
     Serial.print(request->contentLength);
     Serial.print(" bytes of ");
     Serial.println(request->contentType);
-    for(uint16_t i=0; i<request->content.length(); i++) {
-        if(i % 16 == 0) {
-            Serial.printf("\n%04x |", i);
-        }
-        Serial.printf("%02x", int(request->content.charAt(i)));
-        Serial.print(" ");
-        if(i > 0){
-            if(i % 8 == 0 && i % 16 != 0) {
-                Serial.print(" || ");
-            }
-        }
-    }
-    Serial.println();
+//    for(uint16_t i=0; i<request->content.length(); i++) {
+//        if(i % 16 == 0) {
+//            Serial.printf("\n%04x |", i);
+//        }
+//        Serial.printf("%02x", int(request->content.charAt(i)));
+//        Serial.print(" ");
+//        if(i > 0){
+//            if(i % 8 == 0 && i % 16 != 0) {
+//                Serial.print(" || ");
+//            }
+//        }
+//    }
+//    Serial.println();
     Serial.println("----");
 }
-
-static int content_read_func(GifFileType *ft, GifByteType *bt, int arg) {
-    struct request_struct* request = (struct request_struct*) ft->UserData;
-    const char* buf = request->content.c_str() + request->pos;
-    memcpy(bt, buf, arg);
-    request->pos += arg;
-    return arg;
-}
-
-GifFileType* parseGifHeader(struct request_struct *request) {
-    Serial.println("parseGif");
-    GifFileType *gif;
-    int gif_err = 0;
-    request->pos = 0;
-    gif = DGifOpen(request, &content_read_func, &gif_err);
-    if (gif == NULL || gif_err != 0)
-    {
-        Serial.print("Failure to parse GIF. Error");
-        Serial.println(GifErrorString(gif_err));
-
-        return NULL; /* not a GIF */
-    }
-    if(gif == NULL) {
-        Serial.println("Can't read file.");
-        return NULL;
-    }
-    return gif;
-}
+//
+//GifFileType* parseGifHeader(struct request_struct *request) {
+//    Serial.println("parseGif");
+//    GifFileType *gif;
+//    int gif_err = 0;
+//    request->pos = 0;
+//    gif = DGifOpen(request, &content_read_func, &gif_err);
+//    if (gif == NULL || gif_err != 0)
+//    {
+//        Serial.print("Failure to parse GIF. Error");
+//        Serial.println(GifErrorString(gif_err));
+//
+//        return NULL; /* not a GIF */
+//    }
+//    if(gif == NULL) {
+//        Serial.println("Can't read file.");
+//        return NULL;
+//    }
+//    return gif;
+//}
 
 int16_t get_frame_delay(SavedImage frame) {
     int16_t delay = -1;
@@ -255,58 +288,111 @@ void image_bytes(uint8_t *display_bytes, GifByteType *RasterBits) {
     printf("\n");
 }
 
-void handleRequest(WiFiClient client, struct request_struct* request) {
+GifFileType * handleRequest(WiFiClient client, struct request_struct* request) {
+    GifFileType * gif = nullptr;
     handleHeader(client, request); // Pull information from the HTTP header, store in the request object.
     handleContinue(client, request); // If it expects it, send a 100-Continue message to the sender.
-    handleBody(client, request); // Handle the body, loading it into the request object.
     printRequestResults(request); // Print information on the request.
-}
-
-GifFileType * formulateResponse(WiFiClient client, struct request_struct* request) {
-    const uint8_t err_msg_length = 80;
-    char msg[err_msg_length]; // Location to put the message.
-    int gif_process_res = 0;
-    if(request->verb == "GET") {
-        displayPage(client, "OK");
-    } else if(request->verb == "POST" && request->contentType == "image/gif") {
-        // Serial.println("it was a POST");
-        GifFileType *gif = parseGifHeader(request); // process the header of the gif.
-        if(gif == NULL) {
-            return NULL; // Something went wrong processing the header. Not a GIF?
-        }
-        GifWord width = gif->SWidth;
-        GifWord height = gif->SHeight;
-        GifWord colors = gif->SColorResolution;
-        // Determine if the GIF is correct for our application.
-        if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
-            // Image as the wrong size
-            snprintf(msg, err_msg_length, "Frame is wrong size %dx%d. it should be (%dx%d)", width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
-            displayPage(client, msg);
-            return NULL;
-        } else if(colors != 1) {
-            // Image is not mono-chrome.
-            snprintf(msg, err_msg_length, "Number of colors %d is unsupported. Should be 1", colors);
-            displayPage(client, msg);
-            return NULL;
-        } else {
-            // Image header seems to match expectations. Return info for debugging.
-            snprintf(msg, err_msg_length, "Color depth: %d. Size is %dx%d.", colors, width, height);
-            displayPage(client, msg);
-        }
-        gif_process_res = DGifSlurp(gif); // Process the image's data.
-        if(gif_process_res == GIF_ERROR) {
-            snprintf(msg, err_msg_length, "Problems parsing gif. %s", GifErrorString(gif->Error));
-            displayPage(client, msg);
-            return NULL;
-        }
-        return gif;
+    switch (decideRequestType(request)) {
+        case ImageUploadRequest:
+            gif = handleImageUpload(client, request); // Handle the body, loading it into the request object.
+            if(gif == nullptr) {
+                displayPage(client, NotAcceptableCode, request->err_msg, styleError);
+            }
+            break;
+        case IndexPageRequest:
+            handleIndexPage(client);
+            break;
+        case UnsupportedMediaTypeRequest:
+            handleHttpError(client, UnsupportedMediaTypeCode);
+            break;
+        case UnknownPageTypeRequest:
+        default:
+            handleHttpError(client, NotFoundCode);
     }
-    snprintf(msg, err_msg_length, "%s request was not correct.", request->verb);
-    displayPage(client, msg);
-    return NULL;
+    return gif;
 }
 
-void sendImage(GifFileType *gif) {
+Request_t decidePOSTRequestType(request_struct *request) {
+    uint8_t buflen = 10;
+    char contentType[buflen];
+    request->contentType.toCharArray(contentType, buflen);
+    switch(str2int(contentType)) {
+        case str2int("image/gif"):
+            return ImageUploadRequest;
+    }
+    return  UnsupportedMediaTypeRequest;
+}
+
+Request_t decideGETRequestType(request_struct *request) {
+    uint8_t buflen = 10;
+    char path[buflen];
+    request->path.toCharArray(path, buflen);
+    switch (str2int(path)) {
+        case str2int("/"):
+            return IndexPageRequest;
+    }
+    return UnknownPageTypeRequest;
+}
+
+Request_t decideRequestType(request_struct *request) {
+    uint8_t buflen = 10;
+    char verb[buflen];
+    request->verb.toCharArray(verb, buflen);
+    switch(str2int(verb)) {
+        case str2int("POST"):
+            return decidePOSTRequestType(request);
+        case str2int("GET"):
+            return decideGETRequestType(request);
+    }
+    return UnknownPageTypeRequest;
+}
+
+//GifFileType * formulateResponse(WiFiClient client, struct request_struct* request) {
+//    const uint8_t err_msg_length = 80;
+//    char msg[err_msg_length]; // Location to put the message.
+//    int gif_process_res = 0;
+//    if(request->verb == "GET") {
+////        displayPage(client, OkCode, "OK", styleOkay);
+//    } else if(request->verb == "POST" && request->contentType == "image/gif") {
+//        // Serial.println("it was a POST");
+//        GifFileType *gif = parseGifHeader(request); // process the header of the gif.
+//        if(gif == nullptr) {
+//            return nullptr; // Something went wrong processing the header. Not a GIF?
+//        }
+//        GifWord width = gif->SWidth;
+//        GifWord height = gif->SHeight;
+//        GifWord colors = gif->SColorResolution;
+//        // Determine if the GIF is correct for our application.
+//        if( (DISPLAY_WIDTH != width) || (DISPLAY_ROWS*8 != height) ) {
+//            // Image as the wrong size
+//            snprintf(msg, err_msg_length, "Frame is wrong size %dx%d. it should be (%dx%d)", width, height, DISPLAY_WIDTH, DISPLAY_ROWS*8);
+////            displayPage(client, msg);
+//            return nullptr;
+//        } else if(colors != 1) {
+//            // Image is not mono-chrome.
+//            snprintf(msg, err_msg_length, "Number of colors %d is unsupported. Should be 1", colors);
+////            displayPage(client, msg);
+//            return nullptr;
+//        } else {
+//            // Image header seems to match expectations. Return info for debugging.
+//            snprintf(msg, err_msg_length, "Color depth: %d. Size is %dx%d.", colors, width, height);
+////            displayPage(client, msg);
+//        }
+//        gif_process_res = DGifSlurp(gif); // Process the image's data.
+//        if(gif_process_res == GIF_ERROR) {
+//            snprintf(msg, err_msg_length, "Problems parsing gif. %s", GifErrorString(gif->Error));
+////            displayPage(client, msg);
+//            return nullptr;
+//        }
+//        return gif;
+//    }
+//    snprintf(msg, err_msg_length, "%s request was not correct.", request->verb);
+////    displayPage(client, msg);
+//    return nullptr;
+//}
+
+void queueImage(GifFileType *gif) {
     uint8_t display_bytes[DISPLAY_WIDTH*DISPLAY_ROWS];
     for(int frameNr=0; frameNr<gif->ImageCount; frameNr++) {
         SavedImage frame = gif->SavedImages[frameNr];
@@ -324,29 +410,22 @@ void sendImage(GifFileType *gif) {
 #pragma ide diagnostic ignored "OCUnusedGlobalDeclarationInspection"
 void loop() {
     WiFiClient client = server.available();   // listen for incoming clients
-    GifFileType *gif = NULL;
+    GifFileType *gif = nullptr;
     int gif_err = 0;
     char msg[80];
     struct request_struct request;
     if (client) {
-        request.content.remove(0); // Resetting it to empty.
         request.pos = 0;
         request.contentLength = 0;
-        if(gif != NULL) { // start clean.
-            gif = NULL;
-        }
         announceClient(client); // just for debugging. Report on the client connecting
-        handleRequest(client, &request); // Get all of the request information out of the request
-        gif = formulateResponse(client, &request); // process the send data, returning the gif object processed.
+        gif = handleRequest(client, &request); // Get all of the request information out of the request
         client.stop(); // Close the connection
         Serial.println("client disonnected");
     }
-    if(gif != NULL) {
-        sendImage(gif);
+    if(gif != nullptr) {
+        queueImage(gif);
         if(DGifCloseFile(gif, &gif_err) == GIF_ERROR) {
-
             snprintf(msg, 80, "Problems freeing gif. %s", GifErrorString(gif_err));
-            displayPage(client, msg);
         }
     }
     gif = NULL;
