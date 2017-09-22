@@ -108,7 +108,7 @@ void handleHeader(WiFiClient client, struct request_struct *request) {
     // Serial.println(client.connected());
     while ((boolean)client.connected()) {            // loop while the client's connected
         if (client.available() > 0) {                // if there's bytes to read from the client,
-            auto char c = (char) client.read();           // read a byte, then
+            char c = (char) client.read();           // read a byte, then
             Serial.write(c);
             if(c == '\n') { // This line is now done. See what it contains.
                 if(currentLine.length() == 0) {
