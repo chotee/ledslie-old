@@ -42,7 +42,7 @@ void setup()
   SPI.beginTransaction(SPISettings(20000000, MSBFIRST, SPI_MODE2));
   // Init the whole bitmap to 0 first.
   for (int16_t i=0; i<display_size; i++) {
-    bitmapA[i] = 0b01010101;
+    bitmapA[i] = ~( 0x1 << (display_size % 8) );
     bitmapB[i] = 0x00;
   }
   Serial.begin(BAUD_RATE);  // Setup the serial line to read from
