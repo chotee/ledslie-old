@@ -10,9 +10,9 @@
 
 #define col_per_elem 8   // Every LED element has 8 columns.
 #define elem_pcb_count 6  // Every PCB has 6 elements
-#define pcb_line_count 3  // There are 3 PCBs in one line
+#define pcb_in_line_count 3  // There are 3 PCBs in one line
 #define display_line_count 3 // A display as 3 lines
-#define elem_line_count elem_pcb_count*pcb_line_count // Number of elements in a line
+#define elem_line_count elem_pcb_count*pcb_in_line_count // Number of elements in a line
 #define elem_display_count elem_line_count*display_line_count // number of elements in the whole display
 #define display_size elem_display_count*col_per_elem // Number of bytes to represent a whole display.
 
@@ -46,7 +46,11 @@ void setup()
     bitmapB[i] = 0x00;
   }
   Serial.begin(BAUD_RATE);  // Setup the serial line to read from
-  Serial.print("Display size: ");
+  Serial.print("Display size CxR: ");
+  Serial.print(elem_line_count*col_per_elem);
+  Serial.print("x");
+  Serial.print(display_line_count*8);
+  Serial.print(" = ");
   Serial.println(display_size);
   Serial.println("Ledslie Refresher Ready");
 }
@@ -89,13 +93,14 @@ void update_column(
     // After shifting in all data for that column, clock it in with the
     // LATCH_PIN that's normally kept high.
     digitalWrite(LATCH_PIN, LOW);
+    // delayMicroseconds(5);
     digitalWrite(LATCH_PIN, HIGH);
 }
 
 
 void read_input() {
-    digitalWrite(SERIAL_LOAD_PIN, HIGH);
     for(uint8_t t = Serial.available(); t>0; --t) {
+        digitalWrite(SERIAL_LOAD_PIN, HIGH);
         // uint8_t c = Serial.read() - '0';
         // uint16_t i = 0;
         // for(i = 0; i<display_size; i++)
@@ -106,9 +111,13 @@ void read_input() {
         load_counter++;
         if(load_counter == display_size) {
             swap_bitmaps();
+            Serial.println("Swap");
+        } else {
+          // Serial.print(display_size - load_counter);
+          // Serial.print(" ");
         }
+        digitalWrite(SERIAL_LOAD_PIN, LOW);
     }
-    digitalWrite(SERIAL_LOAD_PIN, LOW);
 }
 
 void loop()
